@@ -29,6 +29,7 @@ from subprocess import call, Popen, PIPE
 from _htmlUi import HtmlUi
 from _driveInfo import getDriveUse
 from _driveInfo import getCpuTemp
+from _driveInfo import getCpuUse
 from _imap_gmail import ZenitMail
 from watchdogdev import *
 
@@ -673,7 +674,7 @@ def wrtTft(text='', live=0, pos=(1,1)):
     txtsrfc=pygame.transform.rotate(txtsrfc,270)
     screen.blit(txtsrfc,(115,1))
   if(status != ST_PREVIEW):
-    txt1 = getDriveUse() + ' ' + getCpuTemp()
+    txt1 = getDriveUse() + ' ' + getCpuTemp() + ' ' + getCpuUse()
     txtsrfc = font.render(txt1, 1, pygame.Color(0,0,0), pygame.Color(255,255,255))
     txtsrfc=pygame.transform.rotate(txtsrfc,270)
     h,l=font.size(txt1)

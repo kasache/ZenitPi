@@ -228,6 +228,6 @@ class ZenitMail():
         cllbk(addr, cmd)
     #
 
-zm = ZenitMail()
-zm.checkInbox()
+#zm = ZenitMail()
+#zm.checkInbox()
 

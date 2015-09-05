@@ -36,7 +36,7 @@ from watchdogdev import *
 ESYNC=1#ausloeser wird mit threading.event synchronisiert
 VERBOSE = 0#redet viel
 LOGFILE = 1#redet viel in datei
-MCYC = 120
+MCYC = 60
 UICYC = 1
 status = -2
 abort = 0
@@ -130,6 +130,7 @@ F4_3  = 1.33333333333
 ST_EXIT = -1
 ST_IDLE = 0
 ST_PREVIEW = 1
+ST_ENCODING = 2
 ST_MENU = 10
 ST_REPLAY = 11
 ST_HOLD_I1 = 12
@@ -582,7 +583,7 @@ def getIp():
     s.connect(('8.8.8.8', 0))  # connecting to a UDP address doesn't send packets
     ip = s.getsockname()[0]
   except Exception as e:
-    prnt('getIp' + str(e))
+    prnt('getIp ' + str(e))
     ip = '?'
   #prnt('<getIp' + ip)
   return ip
@@ -617,7 +618,7 @@ def wrtTft(text='', live=0, pos=(1,1)):
       pygame.draw.line(screen, RED, [19, 0], [19,159], 1)
       pygame.draw.line(screen, RED, [109, 0], [109,159], 1)
     #
-  elif(status == ST_IDLE):
+  elif(status == ST_IDLE or status == ST_ENCODING):
     screen.fill(BLUE)
     txt1 = getIp()
     if(wifi == 0):#DIKAM
@@ -633,6 +634,9 @@ def wrtTft(text='', live=0, pos=(1,1)):
     if(ctm != 'none'):
       txt1 = ctm + ' ZEITRAFFER ...'
       txt2 = 'zum Beenden ausloesen'
+    elif(status == ST_ENCODING):
+      txt1 = 'ENCODING ...'
+      txt2 = 'bitte warten'
     else:
       txt1 = 'AUSLOESER HALTEN'
       txt2 = 'DANN LOSLASSEN'
@@ -746,8 +750,9 @@ def updateUiPeriodic():
   #
 
 def updateUi():
+  global status
   with updUiLck:
-    if(status == ST_IDLE):
+    if(status == ST_IDLE or status == ST_ENCODING):
       try:
         wrtMode()
       except Exception as e:
@@ -798,11 +803,18 @@ def asyncSysCall(cmd,async=False):
 def mailCllb(addr, cmds):
   try:
     if(status == ST_IDLE):
-      #cam = picamera.PiCamera()
-      #img = manuTrg(cam)
-      #cam.close()
-      #zm.sendMail('callback', [addr], img)
-      prnt('sollte mail senden')
+      L0.red()
+      cam = picamera.PiCamera()
+      fn = manuTrg(cam, hw=False)
+      cam.close()
+      to=[]
+      to.append(addr)
+      att=[]
+      prnt('sende ' + fn)
+      att.append(fn)
+      zm.sendMail('callback', _text='echo', _send_to=to, _files=att)
+      L0.grn()
+      prnt('sollte mail senden an ' + addr)
     else:
       zm.sendMail('busy, try later', [addr])
   except Exception as e:
@@ -839,11 +851,14 @@ def checkMailPeriodic():
       if(status == ST_IDLE):
         L1.ylw()
         if(hasInet()):
+          prnt('checkMailPeriodic abrufen')
           zm.getSubscribers()
+          prnt('checkMailPeriodic fertig')
         else:
           restartNetwork()
     except:
-      L1.off()
+      prnt('exc checkMailPeriodic')
+    L1.off()
   #
 
 def checkMail():
@@ -1020,66 +1035,78 @@ def streamVideo(cam):
     #
 
 
-def createTmlps(pics, res):
-  prnt('>createTmlps')
+def createTmlps(pics, res, rmPic=False):
+  global status
+  prnt('>createTmlps status='+str(status))
+  lst = status
+  status = ST_ENCODING
   L0.red()
-  if(len(pics) > 0):
-    wrtLst(imgDir+'list.txt',pics)
-  aspect = '16/9'
-  if(res[0]/res[1]<1.4):
-    aspect = '4/3'
-  tmstmp = 'tmlps{:%Y-%m-%d-%H-%M-%S}'.format(datetime.now())
-  ext='.avi'
-  fn=vidDir+tmstmp+ext
-  fn1=vidDir+tmstmp+'_1fps'+ext
-  fn5=vidDir+tmstmp+'_5fps'+ext
-  fn15=vidDir+tmstmp+'_15fps'+ext
-  fn30=vidDir+tmstmp+'_30fps'+ext
-  prnt('start mencoder for ' + fn)
-  wrtTft('tmpls encoding ...')
-  if(len(pics)>12000):
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=24 mf://@' + imgDir + 'list.txt')
-    #
-  elif(len(pics)>3000):
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=15 mf://@' + imgDir + 'list.txt')
-    #
-  elif(len(pics)>500):
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=10 mf://@' + imgDir + 'list.txt')
-    #
-  elif(len(pics)>20):
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=5 mf://@' + imgDir + 'list.txt')
-    #
-  elif(len(pics)>0):
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=1 mf://@' + imgDir + 'list.txt')
-    #
-  else:
-    sysCall('ls ' + imgDir + 'pic*.jpg > ' + imgDir + 'list.txt')
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn1 + ' -mf type=jpeg:fps=1 mf://@' + imgDir + 'list.txt')
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn5 + ' -mf type=jpeg:fps=5 mf://@' + imgDir + 'list.txt')
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn15 + ' -mf type=jpeg:fps=15 mf://@' + imgDir + 'list.txt')
-    sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn30 + ' -mf type=jpeg:fps=30 mf://@' + imgDir + 'list.txt')
-  wrtTft('tmpls clean up ...')
   try:
-    #os.remove(imgDir + 'pic*.jpg')
-    sysCall('rm -f ' + imgDir + 'pic*.jpg')
-    #os.remove(imgDir + 'list.txt')
-    sysCall('rm -f ' + imgDir + 'list.txt')
-  except Exception as e:
+    if(len(pics) > 0):
+      wrtLst(imgDir+'list.txt',pics)
+    aspect = '16/9'
+    if(res[0]/res[1]<1.4):
+      aspect = '4/3'
+    tmstmp = 'tmlps{:%Y-%m-%d-%H-%M-%S}'.format(datetime.now())
+    ext='.avi'
+    fn=vidDir+tmstmp+ext
+    fn1=vidDir+tmstmp+'_1fps'+ext
+    fn5=vidDir+tmstmp+'_5fps'+ext
+    fn15=vidDir+tmstmp+'_15fps'+ext
+    fn30=vidDir+tmstmp+'_30fps'+ext
+    prnt('start mencoder for ' + fn)
+    wrtTft('tmpls encoding ...')
+    if(len(pics)>12000):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=24 mf://@' + imgDir + 'list.txt')
+      #
+    elif(len(pics)>3000):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=15 mf://@' + imgDir + 'list.txt')
+     #
+    elif(len(pics)>500):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=10 mf://@' + imgDir + 'list.txt')
+      #
+    elif(len(pics)>20):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=5 mf://@' + imgDir + 'list.txt')
+      #
+    elif(len(pics)>0):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=1 mf://@' + imgDir + 'list.txt')
+    #
+    else:
+      sysCall('ls ' + imgDir + 'pic*.jpg > ' + imgDir + 'list.txt')
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn1 + ' -mf type=jpeg:fps=1 mf://@' + imgDir + 'list.txt')
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn5 + ' -mf type=jpeg:fps=5 mf://@' + imgDir + 'list.txt')
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn15 + ' -mf type=jpeg:fps=15 mf://@' + imgDir + 'list.txt')
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn30 + ' -mf type=jpeg:fps=30 mf://@' + imgDir + 'list.txt')
+    wrtTft('tmpls clean up ...')
+    try:
+      if(rmPic):
+        #os.remove(imgDir + 'pic*.jpg')
+        sysCall('rm -f ' + imgDir + 'pic*.jpg')
+      #os.remove(imgDir + 'list.txt')
+      sysCall('rm -f ' + imgDir + 'list.txt')
+    except Exception as e:
+      prnt(str(e))
+      L0.ylw()
+  except  Exception as e:
     prnt(str(e))
-  L0.ylw()
+  L0.grn()
+  status = lst
   prnt('<createTmlps')
   return fn
 
 
 #ausloeser
-def manuTrg(cam):
+def manuTrg(cam, hw=True):
   global nMod, nSet, F, status, abort
   readMS()
   prnt('>trigger '+ str(nMod) + ' ' + str(nSet))
   if(checkDiskSpace()==0):
     return
   #
-  status = nMod + ST_FOTO_1#
+  fn=''
+  status = ST_FOTO_1#
+  if(hw):
+    status = nMod + status#
   abort = 0
   L0.ylw()
   if(status == ST_FOTO_1 or status == ST_FOTO_2):
@@ -1145,7 +1172,9 @@ def manuTrg(cam):
       #for i, filename in enumerate(cam.capture_continuous(imgDir+'pic{counter:05d}.jpg')):
       for i in range(cc):
         filename = imgDir+'pic%(counter)05d.jpg'%{'counter':i}
+        G.output(QFLS,1)
         cam.capture(filename)
+        G.output(QFLS,0)
         prnt('click ' + filename)
         pics.append(filename)
         img=pygame.image.load(filename)
@@ -1175,7 +1204,7 @@ def manuTrg(cam):
         L0.red()
         #for continous
       L0.ylw()
-      fn = createTmlps(pics, cam.resolution)
+      fn = createTmlps(pics, cam.resolution, rmPic=True)
       del pics
       L0.grn()
       prnt('tmlps finish')
@@ -1209,6 +1238,7 @@ def manuTrg(cam):
   status = ST_IDLE
   L0.grn()
   prnt('<trigger')
+  return fn
   #manuTrg
 
 #GPIO callback fuer Ausloeser
@@ -1528,6 +1558,7 @@ def init():
   screen.fill(GREEN)
   pygame.display.update()
   fnt = pygame.font.SysFont(None, 8)
+  zm.add_log(prnt)
   zm.add_observer(mailCllb)
   #check inet
   checkTime()

@@ -24,6 +24,7 @@ def prnt(text):
 class ZenitMail():
   def __init__(self):
     self.observers = []
+    self.logCllBks = []
     self.frma = ''
     self.pswd = ''
     self.toa = ''
@@ -34,15 +35,15 @@ class ZenitMail():
     with open('pass.txt', 'r') as f:
       l = list(f)
       f.close()
-    prnt(l)
-    self.frma = l[0]
-    self.pswd = l[1]
-    self.toa = l[2]
+    self.log(l)
+    self.frma = l[0].rstrip()
+    self.pswd = l[1].rstrip()
+    self.toa = l[2].rstrip()
   def uniqAppend(self, list, ln):
     if(ln in list):
-      prnt('X ' + ln)
+      self.log('X ' + ln)
     elif(len(ln)<5):
-      prnt('invalid ' + ln)
+      self.log('invalid ' + ln)
     else:
       list.append(ln)
     #
@@ -52,51 +53,56 @@ class ZenitMail():
       with open('recv.txt', 'r') as f:
         ll = list(f)
         f.close()
-      prnt(ll)
+      self.log(ll)
       for ln in ll:
         self.uniqAppend(l,ln.rstrip())
     except:
-      prnt('exc rdLst')
+      self.log('exc rdLst')
     return l
     #
   def wrtLst(self, _lst):
     try:
       call(['rm','recv.txt'])
     except:
-      prnt('exc wrtLst')
+      self.log('exc wrtLst')
     with open('recv.txt', 'w+') as f:
       f.seek(0,0)
       for r in _lst:
         f.write(r + '\n')
   #
   def createMsg(self, _send_to, _subj, _text=None, _files=None):
+    self.log('createMsg>')
     toa = self.toa
+    self.log('1 ')
     msg = MIMEMultipart()
     msg['From'] = self.frma
+    self.log('2 ')
     for r in _send_to:
+      self.log(r)
       toa += (',' + r.rstrip())
       #
-    prnt(toa)
+    self.log(toa)
     msg['To'] = toa
-    #prnt('3 ')
+    self.log('3 ')
     msg['Date'] = formatdate(localtime = True)
-    #prnt('4 ')
+    #self.log('4 ')
     msg['Subject'] = _subj
-    #prnt('5 ')
+    #self.log('5 ')
     if (_text != None):
       msg.attach( MIMEText(_text) )
-    prnt('6 ')
-    prnt('add attachments ... ')
+    self.log('6 ')
     if(_files != None):
+      self.log('add attachments ... ')
       for f in _files:
-        prnt(' + ' + f)
+        self.log(' + ' + f)
         ext = f.split('.')
-        prnt(ext)
+        self.log(str(ext))
         nm = f.split('/')
-        prnt(nm)
+        self.log(str(nm))
         if(len(ext)>0):
           ex = ext[len(ext)-1]
           if (ex == 'jpg' or ex == 'png'):
+            self.log('attach MIMEImage')
             msg.attach(MIMEImage(file(f).read()))
           else:
             msg.attach( MIMEText(f) )
@@ -108,32 +114,34 @@ class ZenitMail():
           #
         #
       #
+    else:
+      self.log('no attachment')
     return msg
     #
   def sendMail(self, _subj, _text=None, _send_to=None, _files=None):
-    prnt('sendMail ' + _subj)
+    self.log('sendMail ' + _subj)
     if(_send_to is None):
       _send_to = self.rdLst()
       #
     _send_to.append(self.toa)
     try:
-      prnt('createMsg ')
+      self.log('createMsg ')
       msg = self.createMsg(_send_to, _subj, _text, _files)
       usr = self.frma
       pwd = self.pswd
-      prnt('create server obj ')
+      self.log('create server obj ')
       server = smtplib.SMTP('smtp.gmail.com:587')
-      prnt('start tls ')
+      self.log('start tls ')
       server.starttls()
-      prnt('login ')
+      self.log('login ')
       server.login(usr,pwd)
-      prnt('send ' + str(_send_to))
+      self.log('send ' + str(_send_to))
       server.sendmail(usr, _send_to, msg.as_string())
-      prnt('quit ')
+      self.log('quit ')
       server.quit()
-      prnt('sent')
+      self.log('sent')
     except Exception as ex:
-      prnt(ex)
+      self.log(str(ex))
       #
     del _send_to
     #sendMail
@@ -148,23 +156,23 @@ class ZenitMail():
     frmA = ''
     rcvs = []
     cmds = []
-    prnt('old list:')
+    self.log('old list:')
     for r in L:
-      prnt(r)
+      self.log(r)
       #
-    prnt('open imap')
+    self.log('open imap')
     mail = imaplib.IMAP4_SSL('imap.gmail.com')
     mail.login(self.frma, self.pswd)
-    prnt('list...')
+    self.log('list...')
     mail.list()
     # 
     mail.select("inbox")
     typ, searchData = mail.search(None, _rule)
-    prnt('typ='+str(typ))
-    prnt('searchData='+str(searchData))
+    self.log('typ='+str(typ))
+    self.log('searchData='+str(searchData))
     for num in searchData[0].split():
       result, data = mail.fetch(num,'(RFC822)')
-      prnt('result='+str(result))
+      self.log('result='+str(result))
       if(_del):
         mail.store(num, '+FLAGS', '\\Deleted')
         mail.expunge()
@@ -172,11 +180,11 @@ class ZenitMail():
       if(data == None):
         break
       raw_email = data[0][1]
-      #prnt('raw='+str(raw_email))
+      #self.log('raw='+str(raw_email))
       email_message = email.message_from_string(raw_email)
       frmN,frmA = email.utils.parseaddr(email_message['From'])
       sbj = email_message['Subject']
-      prnt(frmA + ' ' + sbj)
+      self.log(frmA + ' ' + sbj)
       frmA = frmA.rstrip()
       cmd = sbj.split()
       if(sbj.lower() == 'subscribe'):
@@ -184,18 +192,18 @@ class ZenitMail():
         #
       elif(sbj.lower() == 'unsubscribe'):
         if((frmA in L)):
-          prnt('< ' + frmA + str(L))
+          self.log('< ' + frmA + str(L))
           L.remove(frmA)
           #
         #
       elif(len(cmd)>1 and cmd[0].lower() == 'trigger'):
-        prnt('click ' + str(cmd))
+        self.log('mail cmd ' + str(cmd))
         rcvs.append(frmA)
         cmds.append(cmd)
         callobs = 1
         #
       elif(len(cmd)>1 and cmd[0].lower() == 'help'):
-        prnt('click ' + str(cmd))
+        self.log('mail cmd ' + str(cmd))
         rcvs.append(frmA)
         cmds.append(cmd)
         callobs = 1
@@ -203,12 +211,12 @@ class ZenitMail():
       #
     mail.close()
     mail.logout()
-    prnt('list before write:')
+    self.log('list before write:')
     for r in L:
       if(len(r) < 5):
         L.remove(r)
       else:
-        prnt(r)
+        self.log(r)
       #
     self.wrtLst(L)
     if(callobs):
@@ -221,13 +229,21 @@ class ZenitMail():
     #return L
     #
   def add_observer(self, cllbk):
-      self.observers.append(cllbk)
+    self.observers.append(cllbk)
     #
   def call_observers(self, addr, cmd):
-      for cllbk in self.observers:
-        cllbk(addr, cmd)
+    for cllbk in self.observers:
+      cllbk(addr, cmd)
     #
+  def add_log(self, cllbk):
+    self.logCllBks.append(cllbk)
+    #
+  def log(self, txt):
+    for cllbk in self.logCllBks:
+      cllbk(txt)
 
 #zm = ZenitMail()
 #zm.checkInbox()
+#zm.getSubscribers()
+#zm.deleteAllSeen()
 

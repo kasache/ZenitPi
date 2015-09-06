@@ -25,6 +25,7 @@ class ZenitMail():
   def __init__(self):
     self.observers = []
     self.logCllBks = []
+    self.auth = []
     self.frma = ''
     self.pswd = ''
     self.toa = ''
@@ -39,13 +40,15 @@ class ZenitMail():
     self.frma = l[0].rstrip()
     self.pswd = l[1].rstrip()
     self.toa = l[2].rstrip()
-  def uniqAppend(self, list, ln):
-    if(ln in list):
+    for ln in l:
+      self.uniqAppend(self.auth,ln.rstrip())
+  def uniqAppend(self, lst, ln):
+    if(ln in lst):
       self.log('X ' + ln)
     elif(len(ln)<5):
       self.log('invalid ' + ln)
     else:
-      list.append(ln)
+      lst.append(ln)
     #
   def rdLst(self):
     l = []
@@ -156,6 +159,9 @@ class ZenitMail():
     frmA = ''
     rcvs = []
     cmds = []
+    sendInstantReply = False
+    instantReply = ''
+    iRcvs = []
     self.log('old list:')
     for r in L:
       self.log(r)
@@ -187,27 +193,41 @@ class ZenitMail():
       self.log(frmA + ' ' + sbj)
       frmA = frmA.rstrip()
       cmd = sbj.split()
-      if(sbj.lower() == 'subscribe'):
-        self.uniqAppend(L,frmA)
-        #
-      elif(sbj.lower() == 'unsubscribe'):
-        if((frmA in L)):
-          self.log('< ' + frmA + str(L))
-          L.remove(frmA)
+      if(frmA in self.auth):
+        if(sbj.lower() == 'subscribe'):
+          self.uniqAppend(L,frmA)
           #
-        #
-      elif(len(cmd)>1 and cmd[0].lower() == 'trigger'):
-        self.log('mail cmd ' + str(cmd))
-        rcvs.append(frmA)
-        cmds.append(cmd)
-        callobs = 1
-        #
-      elif(len(cmd)>1 and cmd[0].lower() == 'help'):
-        self.log('mail cmd ' + str(cmd))
-        rcvs.append(frmA)
-        cmds.append(cmd)
-        callobs = 1
-        #
+        elif(sbj.lower() == 'unsubscribe'):
+          if((frmA in L)):
+            self.log('< ' + frmA + str(L))
+            L.remove(frmA)
+            #
+          #
+        elif(len(cmd)>1 and cmd[0].lower() == 'trigger'):
+          self.log('mail cmd ' + str(cmd))
+          rcvs.append(frmA)
+          cmds.append(cmd)
+          callobs = 1
+          #
+        elif(len(cmd)>1 and cmd[0].lower() == 'help'):
+          self.log('mail cmd ' + str(cmd))
+          rcvs.append(frmA)
+          cmds.append(cmd)
+          callobs = 1
+          #
+        elif(len(cmd)>1 and cmd[0].lower() == 'stream'):
+          self.log('mail cmd ' + str(cmd))
+          rcvs.append(frmA)
+          cmds.append(cmd)
+          callobs = 1
+          #
+        else:
+          #invalid command
+          iRcvs.append(frmA)
+          sendInstantReply = True
+          instantReply = 'invalid cmd'
+      else:
+        self.log('invalid sender ' + frmA)
       #
     mail.close()
     mail.logout()
@@ -223,6 +243,9 @@ class ZenitMail():
       for i in range(len(rcvs)):
         self.call_observers(rcvs[i], cmds[i])
     #
+    if(sendInstantReply):
+      self.sendMail(instantReply, _text=instantReply, _send_to=iRcvs)
+      #
     del L
     del rcvs
     del cmds

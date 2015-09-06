@@ -576,7 +576,7 @@ def hasInet():
   #
 
 def getIp():
-  #prnt('>getIp')
+  #print('>getIp')
   ip = '-'
   try:
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -585,7 +585,7 @@ def getIp():
   except Exception as e:
     prnt('getIp ' + str(e))
     ip = '?'
-  #prnt('<getIp' + ip)
+  #print('<getIp' + ip)
   return ip
 
 def wrtCenterText(txt1, txt2):
@@ -800,23 +800,33 @@ def asyncSysCall(cmd,async=False):
     sysCall(cmd)
   #
 
-def mailCllb(addr, cmds):
+def mailCllb(addr, cmd):
+  global abort
   try:
-    if(status == ST_IDLE):
+    to=[]
+    to.append(addr)
+    if(status == ST_IDLE or status == ST_VID_STREAM):
       L0.red()
-      cam = picamera.PiCamera()
-      fn = manuTrg(cam, hw=False)
-      cam.close()
-      to=[]
-      to.append(addr)
-      att=[]
-      prnt('sende ' + fn)
-      att.append(fn)
-      zm.sendMail('callback', _text='echo', _send_to=to, _files=att)
+      if(cmd[0].lower() == 'help'):
+        zm.sendMail('Re: ' + cmd[0], _text='no help', _send_to=to)
+      elif(cmd[0].lower() == 'trigger'):
+        cam = picamera.PiCamera()
+        fn = manuTrg(cam, hw=False)
+        cam.close()
+        att=[]
+        #prnt('sende ' + fn)
+        att.append(fn)
+        zm.sendMail('Re: ' + cmd[0], _text='echo', _send_to=to, _files=att)
+      elif(cmd[0].lower() == 'stream'):
+        if(cmd[1].lower() == '0'):
+          abort = 1
+        else:
+          startStreamAsync()
+          zm.sendMail('Re: ' + cmd[0], _text='vlc tcp/h264://' + getIp() + ':8000', _send_to=to)
       L0.grn()
-      prnt('sollte mail senden an ' + addr)
+      #prnt('sollte mail senden an ' + addr)
     else:
-      zm.sendMail('busy, try later', [addr])
+      zm.sendMail('busy, try later', _text=':P', _send_to=to)
   except Exception as e:
     prnt(str(e))
     L1.red()
@@ -848,7 +858,7 @@ def checkMailPeriodic():
     time.sleep(MCYC)
     #prnt('checkMailPeriodic')
     try:
-      if(status == ST_IDLE):
+      if(status == ST_IDLE or status == ST_VID_STREAM):
         L1.ylw()
         if(hasInet()):
           prnt('checkMailPeriodic abrufen')
@@ -979,9 +989,10 @@ def createTmb(fn):
 #
 
 def streamVideo(cam):
-  global status
-  status = ST_VID_STREAM
+  global abort, status
   while(abort != 1):
+    lst = status
+    status = ST_VID_STREAM
     try:
       _socket = socket.socket()
       _socket.bind(('0.0.0.0', 8000))
@@ -1032,8 +1043,24 @@ def streamVideo(cam):
         _socket.close()
     except Exception as e:
       prnt(str(e))
-    #
+  status = lst
+  #
 
+def startStream():
+  cam = picamera.PiCamera()
+  try:
+    streamVideo(cam)
+  except:
+    prnt('ouch')
+  finally:
+    cam.close()
+
+def startStreamAsync():
+  prnt('>startStreamAsync')
+  t = threading.Thread(target=startStream)
+  t.setDaemon(1)
+  t.start()
+  prnt('<startStreamAsync')
 
 def createTmlps(pics, res, rmPic=False):
   global status
@@ -1126,6 +1153,7 @@ def manuTrg(cam, hw=True):
       #showImg(img)
       prnt('click ' + str(nSet))
     elif(nSet==9):#stream
+      status = ST_VID_STREAM
       streamVideo(cam)
     #
   elif(status == ST_VID_1280 or status == ST_VID_1920):

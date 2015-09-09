@@ -37,21 +37,7 @@ def getCpuTemp():
     prnt(e)
   return u.rstrip()
 
-def aaaa():
-  #vcgencmd measure_temp
-  u = '?C'
-  try:
-    cmd = 'rm -f /home/a/Bilder/aaa*.txt'
-    print(cmd.split())
-    output,error = Popen(cmd,stdout = PIPE, stderr=PIPE, shell=True).communicate()
-    print(error)
-    print(output)
-  except Exception as e:
-    prnt(e)
-  return u.rstrip()
-
-
-print(getCpuUse())
+#print(getCpuUse())
 #print(getDriveUse())
 #aaaa()
 

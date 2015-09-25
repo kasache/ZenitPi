@@ -30,8 +30,11 @@ from _htmlUi import HtmlUi
 from _driveInfo import getDriveUse
 from _driveInfo import getCpuTemp
 from _driveInfo import getCpuUse
+from _driveInfo import ggt
 from _imap_gmail import ZenitMail
 from watchdogdev import *
+import SimpleHTTPServer
+import SocketServer
 
 ESYNC=1#ausloeser wird mit threading.event synchronisiert
 VERBOSE = 0#redet viel
@@ -60,6 +63,7 @@ inLck = threading.RLock()
 hltLck = threading.RLock()
 updUiLck = threading.RLock()
 updHtmlLck = threading.RLock()
+eIdleLck = threading.Event()
 nMod = 0
 nSet = 0
 cntTrgUp = 0
@@ -68,6 +72,7 @@ zm = ZenitMail()
 wd = 0
 UPDT = ('{:%Y-%m-%d-%H-%M-%S}').format(datetime.now())
 lastError = ''
+PORT = 8888
 
 #buttons
 I1 = 40
@@ -147,7 +152,7 @@ ST_VID_1280 = 28
 ST_VID_1920 = 29
 ST_VID_STREAM = 30
 
-#fileRoot = '/home/pi/'
+#fileRoot = './'
 fileRoot = '/home/www/'
 imgDir = fileRoot + 'img/'
 tmbDir = imgDir + 'tmb/'
@@ -157,6 +162,14 @@ def setLastError(err):
   global lastError
   lastError = err
 
+def countLines(lst):
+  l = []
+  with open(lst, 'r') as f:
+    l = list(f)
+    f.close()
+  return len(l)
+  #
+
 def prnt(text=''):
   with lock:
     if not text:
@@ -165,8 +178,11 @@ def prnt(text=''):
       print(text)
     if(LOGFILE):
       #with logLck:
-      with open(fileRoot+'log' + UPDT + '.txt', 'a') as f:
-        f.write(('{:%Y-%m-%d-%H-%M-%S}').format(datetime.now()) + '\t' + getCpuTemp() + '\t' + str(threading.current_thread()) + '\t' + text + '\n')
+      try:
+        with open(fileRoot+'log' + UPDT + '.txt', 'a') as f:
+          f.write(('{:%Y-%m-%d-%H-%M-%S}').format(datetime.now()) + '\t' + getCpuTemp() + '\t' + str(threading.current_thread()) + '\t' + text + '\n')
+      except:
+        print('log ex')
   #prnt
 
 def checkDiskSpace():
@@ -505,7 +521,7 @@ class DuoLed:
       G.output((self.r,self.g),0)
       G.output(self.g,1)
     except Exception as e:
-      prnt('L.grn' + str(e))  
+      prnt('L.grn ' + str(e))  
   def ylw(self):
     try:
       G.output((self.r,self.g),0)
@@ -715,7 +731,7 @@ def startUpdateUiPeriodic():
   #
 
 def updateUiPeriodic():
-  global wd
+  global wd, status
   ii = 0
   while(status >= ST_IDLE):
     ii=ii+1
@@ -724,7 +740,7 @@ def updateUiPeriodic():
         prnt('start wd')
         sysCall('modprobe bcm2708_wdog')
         wd = watchdog('/dev/watchdog')
-      elif(wd.get_time_left()<6):
+      elif(wd.get_time_left()<3):
         #prnt('wd.keep_alive')
         wd.keep_alive()
       if(status == ST_IDLE):
@@ -780,11 +796,9 @@ def playVid(vid):
 def sysCall(cmd):
   prnt('call> ' + cmd)
   try:
-    output,error = Popen(cmd,stdout = PIPE, stderr=PIPE, shell=True).communicate()
-    #call(cmd.split())
-    #if(error is not None):
-    #  prnt('call result ' + str(error))
-    prnt(output)
+    #Popen(cmd,stdout=PIPE, stderr=PIPE, shell=True).wait()
+    proc = Popen(cmd, shell=True)
+    proc.wait()
   except Exception as e:
     L1.red()
     prnt('ex sysCall ' + str(e))
@@ -801,17 +815,19 @@ def asyncSysCall(cmd,async=False):
   #
 
 def mailCllb(addr, cmd):
-  global abort
+  global abort, eIdleLck
+  eIdleLck.clear()
   try:
     to=[]
     to.append(addr)
-    if(status == ST_IDLE or status == ST_VID_STREAM):
+    ctm = isCronTmlps()
+    if(ctm == 'none' and (status == ST_IDLE or status == ST_VID_STREAM)):
       L0.red()
       if(cmd[0].lower() == 'help'):
         zm.sendMail('Re: ' + cmd[0], _text='no help', _send_to=to)
       elif(cmd[0].lower() == 'trigger'):
         cam = picamera.PiCamera()
-        fn = manuTrg(cam, hw=False)
+        fn = manuTrg(cam, mode=ST_FOTO_1)
         cam.close()
         att=[]
         #prnt('sende ' + fn)
@@ -822,14 +838,15 @@ def mailCllb(addr, cmd):
           abort = 1
         else:
           startStreamAsync()
-          zm.sendMail('Re: ' + cmd[0], _text='vlc tcp/h264://' + getIp() + ':8000', _send_to=to)
+          zm.sendMail('Re: ' + cmd[0], _text='tcp/h264://' + getIp() + ':8000', _send_to=to)
       L0.grn()
       #prnt('sollte mail senden an ' + addr)
     else:
-      zm.sendMail('busy, try later', _text=':P', _send_to=to)
+      zm.sendMail('hab grad was anderes zu tun', _text=':P', _send_to=to)
   except Exception as e:
     prnt(str(e))
     L1.red()
+  eIdleLck.set()
   #
 
 def sendMail(text, atts):
@@ -884,16 +901,23 @@ def checkMailAsync():
 
 
 def deleteAll(filter=''):
-  with updUiLck:
-    if(filter==''):
-      wrtTft('alle Dateien loeschen...')
-      sysCall('rm -f ' + imgDir +'pi*.jpg')
-      sysCall('rm -f ' + tmbDir +'*.jpg')
-      sysCall('rm -f ' + vidDir +'*.avi')
-      sysCall('rm -f ' + vidDir +'*.h264')
-      sysCall('rm -f ' + fileRoot +'*.txt')
-    elif(filter=='tmlps'):
-      sysCall('rm -f ' + imgDir + 'pic*.jpg')
+  global eIdleLck
+  eIdleLck.clear()
+  try:
+    with updUiLck:
+      if(filter==''):
+        wrtTft('alle Dateien loeschen...')
+        sysCall('rm -f ' + imgDir +'pi*.jpg')
+        sysCall('rm -f ' + tmbDir +'*.jpg')
+        sysCall('rm -f ' + vidDir +'*.avi')
+        sysCall('rm -f ' + vidDir +'*.h264')
+        sysCall('rm -f ' + fileRoot +'*.txt')
+      elif(filter=='tmlps'):
+        sysCall('rm -f ' + imgDir + 'pic*.jpg')
+      zm.deleteAllSeen()
+  except Exception as e:
+    prnt(str(e))
+  eIdleLck.set()
 
 #schreibe Liste (l) in die Datei (fi) 
 def wrtLst(fi,l):
@@ -924,18 +948,22 @@ def cronTmlps(ctm,on,cam):
   f = '/home/pi/tmlps'+ctm+'.sh'
   ccc = ''
   if(on):
-    ccc = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg' % (str(cam.iso),str(cam.exposure_mode),str(cam.awb_mode),str(cam.image_effect),str(cam.resolution[0]),str(cam.resolution[1]))
+    ccc = 'wget http://localhost:8888/foto=pic$DT.jpg'
+    #ccc = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg' % (str(cam.iso),str(cam.exposure_mode),str(cam.awb_mode),str(cam.image_effect),str(cam.resolution[0]),str(cam.resolution[1]))
     with open(f, 'w+') as f:
       f.seek(0,0)
       f.write('#!/bin/bash\n')
       f.write('#\n')
+      f.write('touch lock.txt\n')
       f.write('DT=$(date  +''%Y-%m-%d-%H-%M-%S'')\n')
       f.write(ccc + '\n')
+      f.write('rm -f lock.txt')
       #
     #
     #sysCall('chmod +x ' + f)
   else:
     sysCall('rm -f ' + f)
+  prnt('cronTmlps<')
   #
 
 #callback fuer emails mit Betreff 'trigger'
@@ -1065,94 +1093,106 @@ def startStreamAsync():
 def createTmlps(pics, res, rmPic=False):
   global status
   prnt('>createTmlps status='+str(status))
-  lst = status
+  st = status
   status = ST_ENCODING
   L0.red()
   try:
-    if(len(pics) > 0):
-      wrtLst(imgDir+'list.txt',pics)
-    aspect = '16/9'
-    if(res[0]/res[1]<1.4):
-      aspect = '4/3'
+    aspect = ggt(res[0],res[1])
     tmstmp = 'tmlps{:%Y-%m-%d-%H-%M-%S}'.format(datetime.now())
     ext='.avi'
     fn=vidDir+tmstmp+ext
-    fn1=vidDir+tmstmp+'_1fps'+ext
-    fn5=vidDir+tmstmp+'_5fps'+ext
-    fn15=vidDir+tmstmp+'_15fps'+ext
-    fn30=vidDir+tmstmp+'_30fps'+ext
-    prnt('start mencoder for ' + fn)
+    #fn1=vidDir+tmstmp+'_1fps'+ext
+    #fn5=vidDir+tmstmp+'_5fps'+ext
+    #fn15=vidDir+tmstmp+'_15fps'+ext
+    #fn30=vidDir+tmstmp+'_30fps'+ext
     wrtTft('tmpls encoding ...')
-    if(len(pics)>12000):
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=24 mf://@' + imgDir + 'list.txt')
-      #
-    elif(len(pics)>3000):
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=15 mf://@' + imgDir + 'list.txt')
-     #
-    elif(len(pics)>500):
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=10 mf://@' + imgDir + 'list.txt')
-      #
-    elif(len(pics)>20):
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=5 mf://@' + imgDir + 'list.txt')
-      #
-    elif(len(pics)>0):
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=1 mf://@' + imgDir + 'list.txt')
-    #
+    cnt = len(pics)
+    lst = 'list.txt'
+    #lst = imgDir + 'list.txt'
+    sysCall('rm -f ' + lst)
+    #mencoder mf:///home/www/img/pic*.jpg -mf w=800:h=600:fps=25:type=jpg -ovc lavc -lavcopts vcodec=mpeg4:mbd=2:trell -oac copy -o output.avi
+    if(cnt == 0):
+      sysCall('ls ' + imgDir + 'pic*.jpg > ' + lst)
+      cnt = countLines(lst)
+      #lst =/home/www/img/pic*.jpg 
     else:
-      sysCall('ls ' + imgDir + 'pic*.jpg > ' + imgDir + 'list.txt')
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn1 + ' -mf type=jpeg:fps=1 mf://@' + imgDir + 'list.txt')
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn5 + ' -mf type=jpeg:fps=5 mf://@' + imgDir + 'list.txt')
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn15 + ' -mf type=jpeg:fps=15 mf://@' + imgDir + 'list.txt')
-      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn30 + ' -mf type=jpeg:fps=30 mf://@' + imgDir + 'list.txt')
+      wrtLst(lst,pics)
+    if(cnt > 0):
+      prnt('start mencoder for ' + fn + ' with ' + lst + ' frames:' + str(cnt))
+    if(cnt>12000):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=24 mf:///home/www/img/pic*.jpg')
+      #
+    elif(cnt>3000):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=15 mf:///home/www/img/pic*.jpg')
+     #
+    elif(cnt>500):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=10 mf:///home/www/img/pic*.jpg')
+      #
+    elif(cnt>20):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=5 mf:///home/www/img/pic*.jpg')
+      #
+    elif(cnt>0):
+      sysCall('mencoder -nosound -ovc lavc -lavcopts vcodec=mpeg4:aspect=' + aspect + ':vbitrate=8000000 -vf scale='+str(res[0])+':'+str(res[1])+' -o ' + fn + ' -mf type=jpeg:fps=1 mf:///home/www/img/pic*.jpg')
+    #
     wrtTft('tmpls clean up ...')
     try:
       if(rmPic):
         #os.remove(imgDir + 'pic*.jpg')
         sysCall('rm -f ' + imgDir + 'pic*.jpg')
       #os.remove(imgDir + 'list.txt')
-      sysCall('rm -f ' + imgDir + 'list.txt')
+      sysCall('rm -f ' + lst)
     except Exception as e:
       prnt(str(e))
       L0.ylw()
   except  Exception as e:
     prnt(str(e))
   L0.grn()
-  status = lst
+  status = st
   prnt('<createTmlps')
   return fn
 
 
 #ausloeser
-def manuTrg(cam, hw=True):
-  global nMod, nSet, F, status, abort
-  readMS()
-  prnt('>trigger '+ str(nMod) + ' ' + str(nSet))
+def manuTrg(cam, fn='', mode=0, sett=0):
+  global nMod, nSet, F, status, abort, eIdleLck
+  eIdleLck.clear()
+  prnt('>trigger mode='+ str(mode) + ' sett=' + str(sett) + ' fn=' + fn)
   if(checkDiskSpace()==0):
     return
   #
-  fn=''
-  status = ST_FOTO_1#
-  if(hw):
-    status = nMod + status#
+  #status = ST_FOTO_1#
+  #if(hw):
+  #  status = nMod + status#
+  if(mode==0):
+    readMS()
+    mode = nMod + ST_FOTO_1#
+    sett = nSet
+  status = mode
   abort = 0
   L0.ylw()
   if(status == ST_FOTO_1 or status == ST_FOTO_2):
     #einzelbild
-    if(nSet < 3):
-      fn=(imgDir+'pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
+    if(sett < 3):
+      if(fn == ''):
+        fn=(imgDir+'pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
+      else:
+        fn=imgDir + fn
       prnt('capture ' + fn)
       G.output(QFLS,1)
-      cam.exif_tags['IFD0.Copyright'] = 'zenitpi2@gmail.com'
-      cam.exif_tags['EXIF.UserComment'] = b'Zenit Foto + PI'
-      cam.resolution = (2592,1944)
-      cam.capture(fn)
+      try:
+        cam.exif_tags['IFD0.Copyright'] = zm.getAddr()
+        cam.exif_tags['EXIF.UserComment'] = b'Zenit Foto + PI'
+        cam.resolution = (2592,1944)
+        cam.capture(fn)
+        createTmb(fn)
+      except Exception as e:
+        prnt(str(e))
       G.output(QFLS,0)
       F = fn
-      createTmb(fn)
       #img=pygame.image.load(fn)
       #showImg(img)
-      prnt('click ' + str(nSet))
-    elif(nSet==9):#stream
+      prnt('click ' + str(sett))
+    elif(sett==9):#stream
       status = ST_VID_STREAM
       streamVideo(cam)
     #
@@ -1232,7 +1272,7 @@ def manuTrg(cam, hw=True):
         L0.red()
         #for continous
       L0.ylw()
-      fn = createTmlps(pics, cam.resolution, rmPic=True)
+      #fn = createTmlps(pics, cam.resolution, rmPic=True)
       del pics
       L0.grn()
       prnt('tmlps finish')
@@ -1253,9 +1293,9 @@ def manuTrg(cam, hw=True):
     if(ctm != 'none'):
       #stop wenn lauft
       cronTmlps(ctm, False, cam)
-      if(G.input(I1) == 0):#nur film machen wenn knopf?
-        pics = []
-        fn = createTmlps(pics, cam.resolution)
+      #if(G.input(I1) == 0):#nur film machen wenn knopf?
+      #pics = []
+      #fn = createTmlps(pics, cam.resolution, rmPic=False)
     else:
       #start
       cronTmlps(per, True, cam)
@@ -1265,6 +1305,7 @@ def manuTrg(cam, hw=True):
   cam.iso = 0
   status = ST_IDLE
   L0.grn()
+  eIdleLck.set()
   prnt('<trigger')
   return fn
   #manuTrg
@@ -1533,9 +1574,76 @@ def diag():
     #for
   #diag
 
+def getHtml():
+  html='<html><head><title> ZenitPi </title> </head><body>CPU: ' + getCpuTemp() + ' <br>'
+  files = os.listdir(tmbDir)
+  #for root, dirs, files in os.walk(tmbDir):
+  for name in files:
+    html=html+str('<a href=\"./img/' + name + '\"><img src=\"./img/tmb/'+ name + '\" width=160 alt=\"' + name +  '\" name=\"' + name + '\"/></a>')
+    prnt(name)
+    #
+    #
+  html=html+'<br></body></html>'
+  return html
+  #
+
+class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
+  def do_GET(self):
+    print('do_GET ' + self.path)
+    self.protocol_version='HTTP/1.1'
+    self.send_response(200, 'OK')
+    self.send_header('Content-type', 'text/html')
+    self.end_headers()
+    html="<html><head><title> ZenitPi </title> </head><body>CPU: " + getCpuTemp() + " <br></body></html>"
+    if(self.path.find("foto=") >= 0):
+      cmds = self.path.split('=')#1 name, 2 ??
+      try:
+        cam = picamera.PiCamera()
+        fn = manuTrg(cam, cmds[1], mode=ST_FOTO_1)
+        cam.close()
+        updateHtml()
+      except Exception as e:
+        prnt(str(e))
+      #
+    elif(self.path.find("tmlps=") >= 0):
+      cmd = self.path.split('=')[1]
+    else:
+      html="<html> <head><title> ZenitPi </title> </head> <body>CPU: " + str(getCpuTemp()) + " <br>cmds:<br>http://" + getIp() + "/foto=1<br><br></body></html>"
+    #html = getHtml()
+    self.wfile.write(html)  
+  def do_POST(self):
+    logging.error(self.headers)
+    form = cgi.FieldStorage(
+    fp=self.rfile,
+    headers=self.headers,
+    environ={'REQUEST_METHOD':'POST','CONTENT_TYPE':self.headers['Content-Type'],})
+    for item in form.list:
+      logging.error(item)
+    SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
+
+
+Handler = MyRequestHandler
+HTTPD = SocketServer.TCPServer(("", PORT), Handler)
+HTTPT = 0
+
+def startHttpd():
+  global PORT, HTTPD
+  try:
+    prnt('serving at port ' + str(PORT))
+    HTTPD.serve_forever()
+  except Exception as e:
+    prnt('startHttpd exc ' + str(e))  
+
+def startHttpdThrd():
+  global HTTPT
+  HTTPT = threading.Thread(target=startHttpd)
+  HTTPT.setDaemon(1)
+  HTTPT.start()
+
+
 def init():
   global I1,I2,I3,Q1,Q2,Q3,Q4,QFLS,IS3,IS0,IS2,IS1,ITRG,IM2,IM1,IM3,IM0
-  global screen, fnt, L0, L1, status
+  global screen, fnt, L0, L1, status, HTTPT
   #gpio
   prnt('init PI ' + str(G.RPI_REVISION) + ' V'  + str(G.VERSION))
   res = True
@@ -1599,6 +1707,7 @@ def init():
     #startUpdateHtmlPeriodic()
     updateHtml()
     startUpdateUiPeriodic()
+    startHttpdThrd()
   return res
   #init
 
@@ -1623,7 +1732,7 @@ def showImg(img):
 
 def main(argv):
   global I1,I2,I3,Q1,Q2,Q3,Q4,QFLS,IS3,IS0,IS2,IS1,ITRG,IM2,IM1,IM3,IM0
-  global screen,fnt,VERBOSE,L0,L1,mailTimer,status
+  global screen,fnt,VERBOSE,L0,L1,mailTimer,status,eIdleLck,HTTPT
   try:
     opts, args = getopt.getopt(argv, 'vhi:')
     for opt, arg in opts:
@@ -1647,44 +1756,54 @@ def main(argv):
       screen.fill(BLUE)
       pygame.display.update()
       status = ST_IDLE
+      eIdleLck.set()
       L0.grn()
       while(dT < 5):
         readMS()
         prnt('while dT ' + str(dT))
         try:
+          #ctm = isCronTmlps()
+          #if(ctm != 'none'):
+          #  status = ST_TMLPS_CRON
           wrtMode()
           #wrtTft('wait trigger, mod=' + str(nMod) + ' set=' + str(nSet))
           waitTrg()
-          cam = picamera.PiCamera()
-          #cam.resolution = (2592,1944)
-          cam.resolution = (160,128)
-          cam.start_preview()
-          if(status == ST_IDLE):
-            prnt('ITRG ' + str(G.input(ITRG)))
-            L0.ylw()
-            #show preview
+          if(os.path.exists('lock.txt')):
+            wrtTft('Camera BUSY')
+          else:
+            cam = picamera.PiCamera()
+            #cam.resolution = (2592,1944)
             cam.resolution = (160,128)
-            cam.iso = 1000
-            if((nMod+ST_FOTO_1) != ST_FOTO_2):#nur bei FOTO_2 die einstellungen behalten
-              camStt.reset()
-            #
-            while(G.input(ITRG)==0):
-              #while(eTrgDwn.isSet()):
-              status=ST_PREVIEW
-              camStt.use(cam)
-              stream = io.BytesIO()
-              cam.capture(stream, format='jpeg')
-              stream.seek(0)
-              img=pygame.image.load(stream,'jpeg')
-              stream.close()
-              del stream
-              showImg(img)
-              wrtTft(' ', live=1)
-              #while preview
-              L0.grn()
-            cam.stop_preview()
-            manuTrg(cam)#kann lange laufen
-          pass
+            cam.start_preview()
+            if(status == ST_IDLE):
+              prnt('ITRG ' + str(G.input(ITRG)))
+              L0.ylw()
+              #show preview
+              cam.resolution = (160,128)
+              cam.iso = 1000
+              if((nMod+ST_FOTO_1) != ST_FOTO_2):#nur bei FOTO_2 die einstellungen behalten
+                camStt.reset()
+              #
+              while(G.input(ITRG)==0):
+                #while(eTrgDwn.isSet()):
+                status=ST_PREVIEW
+                camStt.use(cam)
+                stream = io.BytesIO()
+                cam.capture(stream, format='jpeg')
+                stream.seek(0)
+                img=pygame.image.load(stream,'jpeg')
+                stream.close()
+                del stream
+                showImg(img)
+                wrtTft(' ', live=1)
+                #while preview
+                L0.grn()
+              cam.stop_preview()
+              manuTrg(cam)#kann lange laufen
+            #else:
+            #  manuTrg(cam)
+        except Exception as e:
+          wrtTft('Exc preview: ' + str(e))
         finally:
           try:
             cam.close()
@@ -1704,17 +1823,20 @@ def main(argv):
     prnt('init failed')
   wrtTft('exit...')
   G.cleanup()
+  status = ST_EXIT
   #screen.fill(WHITE)
   time.sleep(1.0)
+  if(wd != 0):
+    wd.magic_close()
+  eIdleLck.wait()
   pygame.quit()
+  HTTPD.shutdown()
   if(dT > 15.0):
     prnt('normal exit')
   elif(dT > 10.0):
     sysCall('reboot')
   elif(dT > 5.0):
     sysCall('halt')
-  if(wd != 0):
-    wd.magic_close()
   #main
 
 if __name__ == "__main__":

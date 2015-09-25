@@ -42,6 +42,9 @@ class ZenitMail():
     self.toa = l[2].rstrip()
     for ln in l:
       self.uniqAppend(self.auth,ln.rstrip())
+  def getAddr(self):
+    return self.frma
+    #
   def uniqAppend(self, lst, ln):
     if(ln in lst):
       self.log('X ' + ln)

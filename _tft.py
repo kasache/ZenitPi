@@ -9,6 +9,7 @@ import threading
 import smtplib
 import sys
 import getopt
+import ftplib
 #import urllib2
 #import struct
 import socket
@@ -73,6 +74,12 @@ wd = 0
 UPDT = ('{:%Y-%m-%d-%H-%M-%S}').format(datetime.now())
 lastError = ''
 PORT = 8888
+ALIVE = 0
+ftpSRV = ''
+ftpUSR = ''
+ftpPWD = ''
+ftpRDIR = ''
+
 
 #buttons
 I1 = 40
@@ -124,8 +131,8 @@ F = 0
 tmlpsCmd = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg'
 
 #         [0           1           2        3        4        5        6        7                     8        9
-modDscr = ['Foto Auto','Foto Semi','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer frei ','Video 1280  ','Video 1920  ']
-modDscrShrt = ['F(A)','F(S)','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. frei','Zeitraf. CRON ','V1280 ','V1920 ']
+modDscr = ['Foto Auto','Foto Semi','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer frei ','Video 1280  ','Video 640  ']
+modDscrShrt = ['F(A)','F(S)','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. frei','Zeitraf. CRON ','V1280 ','V640 ']
 #                 0       1       2        3        4       5       6       7        8                9
 cronTmlpsModDscr = ['1_min','5_min','15_min','30_min','1_std','3_std','6_std','11_uhr','1_std_9_18_uhr','3_std_9_18_uhr']
 
@@ -149,7 +156,7 @@ ST_TMLPS_4 = 25
 ST_TMLPS_FREE = 26
 ST_TMLPS_CRON = 27
 ST_VID_1280 = 28
-ST_VID_1920 = 29
+ST_VID_640 = 29
 ST_VID_STREAM = 30
 
 #fileRoot = './'
@@ -179,11 +186,25 @@ def prnt(text=''):
     if(LOGFILE):
       #with logLck:
       try:
-        with open(fileRoot+'log' + UPDT + '.txt', 'a') as f:
+        with open(fileRoot+'log.txt', 'a') as f:
           f.write(('{:%Y-%m-%d-%H-%M-%S}').format(datetime.now()) + '\t' + getCpuTemp() + '\t' + str(threading.current_thread()) + '\t' + text + '\n')
       except:
         print('log ex')
   #prnt
+
+def rdFtpAuth():
+  global ftpSRV,ftpUSR,ftpPWD,ftpRDIR
+  l = []
+  with open('ftp.txt', 'r') as f:
+    l = list(f)
+    f.close()
+  #
+  if(len(l)==4):
+    ftpSRV = l[0].rstrip()
+    ftpUSR = l[1].rstrip()
+    ftpPWD = l[2].rstrip()
+    ftpRDIR = l[3].rstrip()
+
 
 def checkDiskSpace():
   try:
@@ -196,6 +217,22 @@ def checkDiskSpace():
     L1.red()
     return -1
 
+def sendFileFtp(fn, ldir, rdir, srv, usr, pwd):
+  prnt('sendFileFtp '+fn+' '+ldir+' '+rdir+' '+srv+' '+usr+' '+pwd)
+  L1.ylw()
+  res=False
+  try:
+    if(hasInet()):
+      ftp = ftplib.FTP(srv)
+      ftp.login(usr, pwd)
+      ftp.cwd(rdir)
+      ftp.storbinary('STOR ' + fn, open(ldir+fn, 'r'))
+      ftp.quit()
+      res=True
+  except Exception as ex:
+    prnt(str(ex))
+  L1.off()
+  return res
 
 #Modus und Einstellung lesen
 def readMS():
@@ -351,7 +388,7 @@ class CamSettings:
       res = self.getPer(st)#abstand zw. aufnahmen, sekunden oder trigger
     elif(st >= ST_TMLPS_1 and st < ST_TMLPS_FREE):
       res = self.getCnt(st)#anzahl bilder
-    elif(st == ST_VID_1280 or st == ST_VID_1920):
+    elif(st == ST_VID_1280 or st == ST_VID_640):
       res = self.getDur()#dauer aufnahme
     else:
       res = self.Set
@@ -485,8 +522,8 @@ class CamSettings:
         s=s+' sek.'
     elif(st >= ST_TMLPS_1 and st < ST_TMLPS_FREE):
       s=s+'x'
-    elif(st == ST_VID_1280 or st == ST_VID_1920):
-      s=s+' sek.'
+    elif(st == ST_VID_1280 or st == ST_VID_640):
+      s=str(self.getDur())+' sek.'
     if(self.iSel==sel):
       s = ' S:['+s+']'
     else:
@@ -731,18 +768,22 @@ def startUpdateUiPeriodic():
   #
 
 def updateUiPeriodic():
-  global wd, status
+  global wd, status, ALIVE
   ii = 0
   while(status >= ST_IDLE):
     ii=ii+1
+    ALIVE=ALIVE+1
     try:
-      if(wd == 0 or wd is None):
-        prnt('start wd')
-        sysCall('modprobe bcm2708_wdog')
-        wd = watchdog('/dev/watchdog')
-      elif(wd.get_time_left()<3):
-        #prnt('wd.keep_alive')
-        wd.keep_alive()
+      #if(wd == 0 or wd is None):
+      #  prnt('start wd')
+      #  sysCall('modprobe bcm2708_wdog')
+      #  wd = watchdog('/dev/watchdog')
+      #elif(wd.get_time_left()<3):
+      #  #prnt('wd.keep_alive')
+      #  wd.keep_alive()
+      if(ALIVE%31==0):
+        prnt('ALIVE')
+        ALIVE=0
       if(status == ST_IDLE):
         if(isCronTmlps() != 'none'):
           #nachts die lichter aus
@@ -793,17 +834,22 @@ def playVid(vid):
     sysCall('mplayer -vf rotate=1 -vo fbdev2:/dev/fb1 -x 160 -y 90 -framedrop -zoom ' + vid)
     status = st
 
-def sysCall(cmd):
-  prnt('call> ' + cmd)
+def sysCall(cmd, log=True):
+  if(log):
+    prnt('call> ' + cmd)
   try:
     #Popen(cmd,stdout=PIPE, stderr=PIPE, shell=True).wait()
     proc = Popen(cmd, shell=True)
+    if(log):
+      prnt('call wait ')
     proc.wait()
   except Exception as e:
-    L1.red()
-    prnt('ex sysCall ' + str(e))
+    if(log):
+      L1.red()
+      prnt('ex sysCall ' + str(e))
   #
-  prnt('call< ' + cmd)
+  if(log):
+    prnt('call< ' + cmd)
 
 def asyncSysCall(cmd,async=False):
   prnt('asyncSysCall ' + cmd + ' async=' + str(async))
@@ -948,7 +994,7 @@ def cronTmlps(ctm,on,cam):
   f = '/home/pi/tmlps'+ctm+'.sh'
   ccc = ''
   if(on):
-    ccc = 'wget http://localhost:8888/foto=pic$DT.jpg'
+    ccc = 'wget http://localhost:8888/foto=pic$DT.jpg=0'
     #ccc = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg' % (str(cam.iso),str(cam.exposure_mode),str(cam.awb_mode),str(cam.image_effect),str(cam.resolution[0]),str(cam.resolution[1]))
     with open(f, 'w+') as f:
       f.seek(0,0)
@@ -1151,9 +1197,25 @@ def createTmlps(pics, res, rmPic=False):
   prnt('<createTmlps')
   return fn
 
-
+def liveRec(cam,dur):
+  ts = time.time()
+  tt = time.time()
+  while((tt - ts) < dur and abort!=1):
+    stream = io.BytesIO()
+    cam.capture(stream, format='jpeg',use_video_port=True)
+    stream.seek(0)
+    img=pygame.image.load(stream,'jpeg')
+    stream.close()
+    showImg(img)
+    if(checkDiskSpace()==0 or abort==1):
+      break
+    wrtTft(str((tt - ts)) + ' / ' + str(dur))
+    cam.wait_recording(1)
+    tt = time.time()
+    #
+  #
 #ausloeser
-def manuTrg(cam, fn='', mode=0, sett=0):
+def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
   global nMod, nSet, F, status, abort, eIdleLck
   eIdleLck.clear()
   prnt('>trigger mode='+ str(mode) + ' sett=' + str(sett) + ' fn=' + fn)
@@ -1174,21 +1236,26 @@ def manuTrg(cam, fn='', mode=0, sett=0):
     #einzelbild
     if(sett < 3):
       if(fn == ''):
-        fn=(imgDir+'pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
-      else:
-        fn=imgDir + fn
+        fn=('pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
       prnt('capture ' + fn)
-      G.output(QFLS,1)
+      if(fls==1):
+        G.output(QFLS,1)
       try:
         cam.exif_tags['IFD0.Copyright'] = zm.getAddr()
         cam.exif_tags['EXIF.UserComment'] = b'Zenit Foto + PI'
+        cam.exif_tags['EXIF.Flash'] = str(fls)
         cam.resolution = (2592,1944)
-        cam.capture(fn)
-        createTmb(fn)
+        cam.capture(imgDir + fn)
+        createTmb(imgDir + fn)
+        F = imgDir + fn
       except Exception as e:
         prnt(str(e))
-      G.output(QFLS,0)
-      F = fn
+      if(fls==1):
+        G.output(QFLS,0)
+      ctm = isCronTmlps()
+      if(ctm != 'none'):
+        if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
+          sysCall('rm -f '+imgDir + fn)
       #img=pygame.image.load(fn)
       #showImg(img)
       prnt('click ' + str(sett))
@@ -1196,31 +1263,20 @@ def manuTrg(cam, fn='', mode=0, sett=0):
       status = ST_VID_STREAM
       streamVideo(cam)
     #
-  elif(status == ST_VID_1280 or status == ST_VID_1920):
+  elif(status == ST_VID_1280 or status == ST_VID_640):
     prnt('video ...')
     if(status == ST_VID_1280):
       cam.resolution = (1280,720)
     else:
-      cam.resolution = (1920,1080)
+      cam.resolution = (640,480)
     dur = camStt.getDur()
+    prnt('start vid (' + str(cam.resolution) + ') for ' + str(dur))
     wrtTft('start vid (' + str(cam.resolution) + ') for ' + str(dur))
     #fn=vidDir+'piv{:%Y-%m-%d-%H-%M-%S}.mjpeg'.format(datetime.now())
     fn=vidDir+'piv{:%Y-%m-%d-%H-%M-%S}.h264'.format(datetime.now())
     cam.start_recording(fn)
-    ts = time.time()
-    tt = time.time()
-    while((tt - ts) < dur and abort!=1):
-      stream = io.BytesIO()
-      cam.capture(stream, format='jpeg',use_video_port=True)
-      stream.seek(0)
-      img=pygame.image.load(stream,'jpeg')
-      stream.close()
-      showImg(img)
-      if(checkDiskSpace()==0 or abort==1):
-        break
-      wrtTft(str((tt - ts)) + ' / ' + str(dur))
-      tt = time.time()
-      #
+    #cam.wait_recording(dur)
+    liveRec(cam,dur)
     cam.stop_recording()
     prnt('... stop vid')
   elif(status >= ST_TMLPS_1 and status <= ST_TMLPS_FREE):
@@ -1272,7 +1328,7 @@ def manuTrg(cam, fn='', mode=0, sett=0):
         L0.red()
         #for continous
       L0.ylw()
-      #fn = createTmlps(pics, cam.resolution, rmPic=True)
+      createTmlps(pics, cam.resolution, rmPic=True)
       del pics
       L0.grn()
       prnt('tmlps finish')
@@ -1596,10 +1652,13 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
     self.end_headers()
     html="<html><head><title> ZenitPi </title> </head><body>CPU: " + getCpuTemp() + " <br></body></html>"
     if(self.path.find("foto=") >= 0):
-      cmds = self.path.split('=')#1 name, 2 ??
+      cmds = self.path.split('=')#1 name, 2 blitz, ??
+      flsCmd = 0
+      if(len(cmds)):
+        flsCmd = int(cmds[2])
       try:
         cam = picamera.PiCamera()
-        fn = manuTrg(cam, cmds[1], mode=ST_FOTO_1)
+        fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
         cam.close()
         updateHtml()
       except Exception as e:
@@ -1694,7 +1753,7 @@ def init():
   screen.fill(GREEN)
   pygame.display.update()
   fnt = pygame.font.SysFont(None, 8)
-  zm.add_log(prnt)
+  #zm.add_log(prnt)
   zm.add_observer(mailCllb)
   #check inet
   checkTime()
@@ -1708,6 +1767,7 @@ def init():
     updateHtml()
     startUpdateUiPeriodic()
     startHttpdThrd()
+    rdFtpAuth()
   return res
   #init
 
@@ -1746,6 +1806,7 @@ def main(argv):
     print('args exception')
     sys.exit(2)
     #
+  sysCall('mv ' + fileRoot+'log.txt ' + fileRoot+'logBefore' + UPDT + '.txt', log=False)
   if(init()):
     #diag()
     #

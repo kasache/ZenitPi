@@ -222,7 +222,7 @@ def sendFileFtp(fn, ldir, rdir, srv, usr, pwd):
   L1.ylw()
   res=False
   try:
-    if(hasInet()):
+    if(isInSubnet(srv)):
       ftp = ftplib.FTP(srv)
       ftp.login(usr, pwd)
       ftp.cwd(rdir)
@@ -627,6 +627,19 @@ def ledExit():
 def hasInet():
   return len(getIp())>6
   #
+def isInSubnet(subn):
+  prnt('isInSubnet ' + subn)
+  ip = getIp().split('.')
+  sb = subn.split('.')
+  res = True
+  if(len(ip) == len(sb) and len(ip)==4):
+    for i in range(0,3):
+      prnt(ip[i] + '==' + sb[i])
+      res = (ip[i]==sb[i])
+  else:
+    res = False
+  return res
+  
 
 def getIp():
   #print('>getIp')
@@ -873,11 +886,24 @@ def mailCllb(addr, cmd):
         zm.sendMail('Re: ' + cmd[0], _text='no help', _send_to=to)
       elif(cmd[0].lower() == 'trigger'):
         cam = picamera.PiCamera()
-        fn = manuTrg(cam, mode=ST_FOTO_1)
+        fl=1
+        f = ''
+        md=ST_FOTO_1
+        if(cmd[1]=='0'):
+          fl=0
+        if(len(cmd)>2):
+          #cam.exposure_compensation = self.ExpCps[self.iExpCps]
+          cam.iso = int(cmd[2])
+          #cam.awb_mode = self.AwbMod[self.iAwbMod]
+          #cam.exposure_mode = self.ExpMod[self.iExpMod]
+          #cam.image_effect = self.ImgEff[self.iImgEff]
+        if(len(cmd)>3):
+          md = ST_FOTO_2
+        f = manuTrg(cam, fn=f, fls=fl, mode=md)
         cam.close()
         att=[]
         #prnt('sende ' + fn)
-        att.append(fn)
+        att.append(f)
         zm.sendMail('Re: ' + cmd[0], _text='echo', _send_to=to, _files=att)
       elif(cmd[0].lower() == 'stream'):
         if(cmd[1].lower() == '0'):
@@ -1237,6 +1263,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
     if(sett < 3):
       if(fn == ''):
         fn=('pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
+      #elif(fn=='yuv'):
       prnt('capture ' + fn)
       if(fls==1):
         G.output(QFLS,1)
@@ -1245,8 +1272,10 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
         cam.exif_tags['EXIF.UserComment'] = b'Zenit Foto + PI'
         cam.exif_tags['EXIF.Flash'] = str(fls)
         cam.resolution = (2592,1944)
-        cam.capture(imgDir + fn)
-        createTmb(imgDir + fn)
+        if(status==ST_FOTO_2):
+          cam.capture(imgDir + fn, 'yuv')  
+        else:
+          cam.capture(imgDir + fn)
         F = imgDir + fn
       except Exception as e:
         prnt(str(e))
@@ -1255,7 +1284,9 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
       ctm = isCronTmlps()
       if(ctm != 'none'):
         if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
-          sysCall('rm -f '+imgDir + fn)
+          sysCall('rm -f '+ imgDir + fn)
+      elif(status == ST_FOTO_1):#nicht bei foto_2
+        createTmb(imgDir + fn)
       #img=pygame.image.load(fn)
       #showImg(img)
       prnt('click ' + str(sett))
@@ -1363,7 +1394,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
   L0.grn()
   eIdleLck.set()
   prnt('<trigger')
-  return fn
+  return F
   #manuTrg
 
 #GPIO callback fuer Ausloeser

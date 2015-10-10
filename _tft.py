@@ -319,6 +319,7 @@ class CamSettings:
     self.isDirty = 0
   def reset(self):
     prnt('camstt reset')
+    #self.iIso = 0
     self.iAwbMod = 0
     self.iExpMod = 0
     self.iExpCps = 7
@@ -883,22 +884,31 @@ def mailCllb(addr, cmd):
     if(ctm == 'none' and (status == ST_IDLE or status == ST_VID_STREAM)):
       L0.red()
       if(cmd[0].lower() == 'help'):
-        zm.sendMail('Re: ' + cmd[0], _text='no help', _send_to=to)
+        txt = 'Betreff: trigger flash iso mode effect ' + str() +'\n' 
+        txt = txt + 'flash  0 / 1 \n'
+        txt = txt + 'iso    0..800 \n'
+        txt = txt + 'mode   ' + str(camStt.ExpMod) +'\n'
+        txt = txt + 'effect ' + str(camStt.ImgEff) +'\n'
+        zm.sendMail('Re: ' + cmd[0], _text=txt, _send_to=to)
       elif(cmd[0].lower() == 'trigger'):
         cam = picamera.PiCamera()
         fl=1
         f = ''
         md=ST_FOTO_1
-        if(cmd[1]=='0'):
-          fl=0
+        if(len(cmd)>1):
+          fl=int(cmd[1])
         if(len(cmd)>2):
           #cam.exposure_compensation = self.ExpCps[self.iExpCps]
           cam.iso = int(cmd[2])
-          #cam.awb_mode = self.AwbMod[self.iAwbMod]
-          #cam.exposure_mode = self.ExpMod[self.iExpMod]
-          #cam.image_effect = self.ImgEff[self.iImgEff]
         if(len(cmd)>3):
-          md = ST_FOTO_2
+          if cmd[3] in camStt.ExpMod:
+            cam.exposure_mode = cmd[3]
+        if(len(cmd)>4):
+          if cmd[4] in camStt.ImgEff:
+            cam.image_effect = cmd[4]
+          #cam.awb_mode = self.AwbMod[self.iAwbMod]
+        #if(len(cmd)>3):
+        #  md = ST_FOTO_2
         f = manuTrg(cam, fn=f, fls=fl, mode=md)
         cam.close()
         att=[]
@@ -1268,7 +1278,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
       if(fls==1):
         G.output(QFLS,1)
       try:
-        cam.exif_tags['IFD0.Copyright'] = zm.getAddr()
+        cam.exif_tags['IFD0.Copyright'] = '(c) ' + zm.getAddr()
         cam.exif_tags['EXIF.UserComment'] = b'Zenit Foto + PI'
         cam.exif_tags['EXIF.Flash'] = str(fls)
         cam.resolution = (2592,1944)

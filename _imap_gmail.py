@@ -206,13 +206,13 @@ class ZenitMail():
             L.remove(frmA)
             #
           #
-        elif(len(cmd)>1 and cmd[0].lower() == 'trigger'):
+        elif(len(cmd)>0 and cmd[0].lower() == 'trigger'):
           self.log('mail cmd ' + str(cmd))
           rcvs.append(frmA)
           cmds.append(cmd)
           callobs = 1
           #
-        elif(len(cmd)>1 and cmd[0].lower() == 'help'):
+        elif(len(cmd)>0 and cmd[0].lower() == 'help'):
           self.log('mail cmd ' + str(cmd))
           rcvs.append(frmA)
           cmds.append(cmd)

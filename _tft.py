@@ -33,14 +33,14 @@ from _driveInfo import getCpuTemp
 from _driveInfo import getCpuUse
 from _driveInfo import ggt
 from _imap_gmail import ZenitMail
-from watchdogdev import *
+#from watchdogdev import *
 import SimpleHTTPServer
 import SocketServer
 
 ESYNC=1#ausloeser wird mit threading.event synchronisiert
 VERBOSE = 0#redet viel
 LOGFILE = 1#redet viel in datei
-MCYC = 60
+MCYC = 120
 UICYC = 1
 status = -2
 abort = 0
@@ -70,7 +70,7 @@ nSet = 0
 cntTrgUp = 0
 cntTrgDwn = 0
 zm = ZenitMail()
-wd = 0
+#wd = 0
 UPDT = ('{:%Y-%m-%d-%H-%M-%S}').format(datetime.now())
 lastError = ''
 PORT = 8888
@@ -135,6 +135,8 @@ modDscr = ['Foto Auto','Foto Semi','Zeitraffer ','Zeitraffer ','Zeitraffer ','Ze
 modDscrShrt = ['F(A)','F(S)','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. frei','Zeitraf. CRON ','V1280 ','V640 ']
 #                 0       1       2        3        4       5       6       7        8                9
 cronTmlpsModDscr = ['1_min','5_min','15_min','30_min','1_std','3_std','6_std','11_uhr','1_std_9_18_uhr','3_std_9_18_uhr']
+
+lstFilesToSend = []
 
 F16_9 = 1.77777777778
 F4_3  = 1.33333333333
@@ -782,7 +784,8 @@ def startUpdateUiPeriodic():
   #
 
 def updateUiPeriodic():
-  global wd, status, ALIVE
+  global status, ALIVE
+  #global wd
   ii = 0
   while(status >= ST_IDLE):
     ii=ii+1
@@ -963,6 +966,7 @@ def checkMailPeriodic():
           prnt('checkMailPeriodic abrufen')
           zm.getSubscribers()
           prnt('checkMailPeriodic fertig')
+          copyOutstandingAsync()
         else:
           restartNetwork()
     except:
@@ -981,6 +985,23 @@ def checkMailAsync():
   t.start()
   #checkMailAsync
 
+def copyOutstandingFtp():
+  global lstFilesToSend
+  try:
+    while(len(lstFilesToSend)>0):
+      fn = lstFilesToSend[0]
+      if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
+        sysCall('rm -f '+ imgDir + fn)
+        lstFilesToSend.remove(fn)
+      else:
+        break;
+  except Exception as ex:
+    prnt(str(ex))
+
+def copyOutstandingAsync():
+  t = threading.Thread(target=copyOutstandingFtp)
+  t.setDaemon(1)
+  t.start()
 
 def deleteAll(filter=''):
   global eIdleLck
@@ -1025,13 +1046,12 @@ def isCronTmlps():
   #prnt('isCronTmlps< ' + res)
   return res;
 
-def cronTmlps(ctm,on,cam):
+def cronTmlps(ctm,on,fls):
   prnt('cronTmlps> ' + ctm + str(on))
   f = '/home/pi/tmlps'+ctm+'.sh'
   ccc = ''
   if(on):
-    ccc = 'wget http://localhost:8888/foto=pic$DT.jpg=0'
-    #ccc = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg' % (str(cam.iso),str(cam.exposure_mode),str(cam.awb_mode),str(cam.image_effect),str(cam.resolution[0]),str(cam.resolution[1]))
+    ccc = 'wget http://localhost:' + str(PORT) + '/foto=pic$DT.jpg=' + str(fls)
     with open(f, 'w+') as f:
       f.seek(0,0)
       f.write('#!/bin/bash\n')
@@ -1252,7 +1272,7 @@ def liveRec(cam,dur):
   #
 #ausloeser
 def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
-  global nMod, nSet, F, status, abort, eIdleLck
+  global nMod, nSet, F, status, abort, eIdleLck, lstFilesToSend
   eIdleLck.clear()
   prnt('>trigger mode='+ str(mode) + ' sett=' + str(sett) + ' fn=' + fn)
   if(checkDiskSpace()==0):
@@ -1288,13 +1308,16 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
           cam.capture(imgDir + fn)
         F = imgDir + fn
       except Exception as e:
+        #cam.close()
         prnt(str(e))
       if(fls==1):
         G.output(QFLS,0)
       ctm = isCronTmlps()
       if(ctm != 'none'):
-        if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
-          sysCall('rm -f '+ imgDir + fn)
+        #if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
+        #  sysCall('rm -f '+ imgDir + fn)
+        #else:
+        lstFilesToSend.append(fn)
       elif(status == ST_FOTO_1):#nicht bei foto_2
         createTmb(imgDir + fn)
       #img=pygame.image.load(fn)
@@ -1389,13 +1412,13 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
     ctm = isCronTmlps()
     if(ctm != 'none'):
       #stop wenn lauft
-      cronTmlps(ctm, False, cam)
+      cronTmlps(ctm, False, 0)
       #if(G.input(I1) == 0):#nur film machen wenn knopf?
       #pics = []
       #fn = createTmlps(pics, cam.resolution, rmPic=False)
     else:
       #start
-      cronTmlps(per, True, cam)
+      cronTmlps(per, True, 0)
   else:
     prnt('unused mode ' + str(status))
     #
@@ -1928,8 +1951,8 @@ def main(argv):
   status = ST_EXIT
   #screen.fill(WHITE)
   time.sleep(1.0)
-  if(wd != 0):
-    wd.magic_close()
+  #if(wd != 0):
+  #  wd.magic_close()
   eIdleLck.wait()
   pygame.quit()
   HTTPD.shutdown()

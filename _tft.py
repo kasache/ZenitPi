@@ -3,7 +3,9 @@ import pygame
 import io
 import os
 import time
+import numpy as np
 import picamera
+import picamera.array
 import RPi.GPIO as G
 import threading
 import smtplib
@@ -24,6 +26,7 @@ from email.mime.text import MIMEText
 from email.MIMEImage import MIMEImage
 from email.utils import COMMASPACE, formatdate
 from array import array
+from fractions import Fraction
 #from threading import Thread
 #from threading import Timer
 from subprocess import call, Popen, PIPE
@@ -33,7 +36,6 @@ from _driveInfo import getCpuTemp
 from _driveInfo import getCpuUse
 from _driveInfo import ggt
 from _imap_gmail import ZenitMail
-#from watchdogdev import *
 import SimpleHTTPServer
 import SocketServer
 
@@ -131,8 +133,8 @@ F = 0
 tmlpsCmd = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg'
 
 #         [0           1           2        3        4        5        6        7                     8        9
-modDscr = ['Foto Auto','Foto Semi','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer frei ','Video 1280  ','Video 640  ']
-modDscrShrt = ['F(A)','F(S)','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. frei','Zeitraf. CRON ','V1280 ','V640 ']
+modDscr = ['Foto Auto','Foto Semi','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer frei ','Bewegung ','Video 1280  ','Video 640  ']
+modDscrShrt = ['F(A)','F(S)','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. frei ','Bew. ','Zeitraf. CRON ','V1280 ','V640 ']
 #                 0       1       2        3        4       5       6       7        8                9
 cronTmlpsModDscr = ['1_min','5_min','15_min','30_min','1_std','3_std','6_std','11_uhr','1_std_9_18_uhr','3_std_9_18_uhr']
 
@@ -154,8 +156,9 @@ ST_FOTO_2 = 21
 ST_TMLPS_1 = 22
 ST_TMLPS_2 = 23
 ST_TMLPS_3 = 24
-ST_TMLPS_4 = 25
-ST_TMLPS_FREE = 26
+#ST_TMLPS_4 = 25
+ST_TMLPS_FREE = 25
+ST_MOTIONDETECT = 26
 ST_TMLPS_CRON = 27
 ST_VID_1280 = 28
 ST_VID_640 = 29
@@ -545,6 +548,13 @@ class DuoLed:
     self.r = r
     self.g = g
     self.G = G
+  def dark(self):
+    hr = datetime.now().hour
+    if(hr >= 19 or hr < 7):
+      self.off()
+      return True
+    else:
+      return False
   def off(self):
     try:
       G.output((self.r,self.g),0)
@@ -552,18 +562,24 @@ class DuoLed:
       prnt('L.off' + str(e))  
   def red(self):
     try:
+      if(self.dark()):
+        return
       G.output((self.r,self.g),0)
       G.output(self.r,1)
     except Exception as e:
       prnt('L.red' + str(e))  
   def grn(self):
     try:
+      if(self.dark()):
+        return
       G.output((self.r,self.g),0)
       G.output(self.g,1)
     except Exception as e:
       prnt('L.grn ' + str(e))  
   def ylw(self):
     try:
+      if(self.dark()):
+        return
       G.output((self.r,self.g),0)
       G.output((self.r,self.g),1)
     except Exception as e:
@@ -631,13 +647,13 @@ def hasInet():
   return len(getIp())>6
   #
 def isInSubnet(subn):
-  prnt('isInSubnet ' + subn)
+  #prnt('isInSubnet ' + subn)
   ip = getIp().split('.')
   sb = subn.split('.')
   res = True
   if(len(ip) == len(sb) and len(ip)==4):
     for i in range(0,3):
-      prnt(ip[i] + '==' + sb[i])
+      #prnt(ip[i] + '==' + sb[i])
       res = (ip[i]==sb[i])
   else:
     res = False
@@ -785,30 +801,17 @@ def startUpdateUiPeriodic():
 
 def updateUiPeriodic():
   global status, ALIVE
-  #global wd
   ii = 0
   while(status >= ST_IDLE):
     ii=ii+1
     ALIVE=ALIVE+1
     try:
-      #if(wd == 0 or wd is None):
-      #  prnt('start wd')
-      #  sysCall('modprobe bcm2708_wdog')
-      #  wd = watchdog('/dev/watchdog')
-      #elif(wd.get_time_left()<3):
-      #  #prnt('wd.keep_alive')
-      #  wd.keep_alive()
       if(ALIVE%31==0):
         prnt('ALIVE')
         ALIVE=0
       if(status == ST_IDLE):
         if(isCronTmlps() != 'none'):
-          #nachts die lichter aus
-          hr = datetime.now().hour
-          if(hr >= 19 or hr < 7):
-            L0.off()
-            L1.off()
-          elif(ii>5):
+          if(ii>5):
             L0.ylw()
             ii=0
           else:
@@ -877,6 +880,31 @@ def asyncSysCall(cmd,async=False):
     sysCall(cmd)
   #
 
+def capt(cam):
+  with camLck:
+    prnt('capt ' + str(cam))
+    try:
+      fn=('pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
+      cam.capture(imgDir + fn, use_video_port=True)
+      prnt('captured ' + imgDir + fn)
+      createTmb(imgDir + fn)
+      updateHtml()
+      att=[]
+      att.append(imgDir + fn)
+      #zm.sendMail('bewegung erkannt ', _text='', _files=att)
+    except Exception as ex:
+      prnt(str(ex))
+
+def asyncCapture(cam):
+  prnt('asyncCapture')
+  try:
+    t = threading.Thread(target=capt, args=(cam,))
+    t.start()
+  except Exception as ex:
+    prnt(str(ex))
+  #
+
+
 def mailCllb(addr, cmd):
   global abort, eIdleLck
   eIdleLck.clear()
@@ -894,26 +922,26 @@ def mailCllb(addr, cmd):
         txt = txt + 'effect ' + str(camStt.ImgEff) +'\n'
         zm.sendMail('Re: ' + cmd[0], _text=txt, _send_to=to)
       elif(cmd[0].lower() == 'trigger'):
-        cam = picamera.PiCamera()
-        fl=1
         f = ''
-        md=ST_FOTO_1
-        if(len(cmd)>1):
-          fl=int(cmd[1])
-        if(len(cmd)>2):
-          #cam.exposure_compensation = self.ExpCps[self.iExpCps]
-          cam.iso = int(cmd[2])
-        if(len(cmd)>3):
-          if cmd[3] in camStt.ExpMod:
-            cam.exposure_mode = cmd[3]
-        if(len(cmd)>4):
-          if cmd[4] in camStt.ImgEff:
-            cam.image_effect = cmd[4]
-          #cam.awb_mode = self.AwbMod[self.iAwbMod]
-        #if(len(cmd)>3):
-        #  md = ST_FOTO_2
-        f = manuTrg(cam, fn=f, fls=fl, mode=md)
-        cam.close()
+        with picamera.PiCamera() as cam:
+          fl=1
+          md=ST_FOTO_1
+          if(len(cmd)>1):
+            fl=int(cmd[1])
+          if(len(cmd)>2):
+            #cam.exposure_compensation = self.ExpCps[self.iExpCps]
+            cam.iso = int(cmd[2])
+          if(len(cmd)>3):
+            if cmd[3] in camStt.ExpMod:
+              cam.exposure_mode = cmd[3]
+          if(len(cmd)>4):
+            if cmd[4] in camStt.ImgEff:
+              cam.image_effect = cmd[4]
+            #cam.awb_mode = self.AwbMod[self.iAwbMod]
+          #if(len(cmd)>3):
+          #  md = ST_FOTO_2
+          f = manuTrg(cam, fn=f, fls=fl, mode=md)
+        #cam.close()
         att=[]
         #prnt('sende ' + fn)
         att.append(f)
@@ -932,7 +960,7 @@ def mailCllb(addr, cmd):
     prnt(str(e))
     L1.red()
   eIdleLck.set()
-  #
+  #mailClbk
 
 def sendMail(text, atts):
   zm.sendMail(text, _files=atts)
@@ -963,21 +991,20 @@ def checkMailPeriodic():
       if(status == ST_IDLE or status == ST_VID_STREAM):
         L1.ylw()
         if(hasInet()):
-          prnt('checkMailPeriodic abrufen')
+          #prnt('checkMailPeriodic abrufen')
           zm.getSubscribers()
-          prnt('checkMailPeriodic fertig')
+          #prnt('checkMailPeriodic fertig')
           copyOutstandingAsync()
         else:
           restartNetwork()
-    except:
-      prnt('exc checkMailPeriodic')
+    except Exception as ex:
+      prnt(str(ex))
     L1.off()
   #
 
 def checkMail():
   zm.getSubscribers()
   #
-
 #
 def checkMailAsync():
   t = threading.Thread(target=checkMail)
@@ -991,7 +1018,7 @@ def copyOutstandingFtp():
     while(len(lstFilesToSend)>0):
       fn = lstFilesToSend[0]
       if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
-        sysCall('rm -f '+ imgDir + fn)
+        sysCall('rm -f '+ imgDir + fn, log=False)
         lstFilesToSend.remove(fn)
       else:
         break;
@@ -1253,6 +1280,20 @@ def createTmlps(pics, res, rmPic=False):
   prnt('<createTmlps')
   return fn
 
+
+def measureLight(camera):
+  pixAverage = 0
+  orig_res = camera.resolution
+  camera.resolution = (400, 300)
+  with picamera.array.PiRGBArray(camera) as stream:
+    camera.exposure_mode = 'auto'
+    camera.awb_mode = 'auto'
+    camera.capture(stream, format='rgb')
+    pixAverage = int(np.average(stream.array[...,1]))
+  prnt("measureLight pixAverage=%i" % pixAverage)
+  camera.resolution = orig_res
+  return pixAverage
+
 def liveRec(cam,dur):
   ts = time.time()
   tt = time.time()
@@ -1294,7 +1335,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
       if(fn == ''):
         fn=('pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
       #elif(fn=='yuv'):
-      prnt('capture ' + fn)
+      #prnt('capture ' + fn)
       if(fls==1):
         G.output(QFLS,1)
       try:
@@ -1322,7 +1363,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
         createTmb(imgDir + fn)
       #img=pygame.image.load(fn)
       #showImg(img)
-      prnt('click ' + str(sett))
+      #prnt('click ' + str(sett))
     elif(sett==9):#stream
       status = ST_VID_STREAM
       streamVideo(cam)
@@ -1405,6 +1446,17 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
       raise
       #
     #
+  elif(status == ST_MOTIONDETECT):
+    #with picamera.PiCamera() as camera:
+    with DetectMotion(cam) as output:
+      cam.resolution = (800, 600)
+      cam.iso = 800
+      cam.drc_strength='high'
+      cam.start_recording(
+            '/dev/null', format='h264', motion_output=output)
+      while(abort != 1):
+        cam.wait_recording(30)
+      cam.stop_recording()
   elif(status == ST_TMLPS_CRON):
     prnt('cron tmlps')
     cam.resolution = (2592,1944)#(1920,1080)
@@ -1642,12 +1694,6 @@ def swapWiFi():
   else:
     wifi = 1
     sysCall('/home/pi/wifiKa3ax.sh')
-  #if(hasInet()):
-  #  L1.grn()
-  #else:
-  #  L1.ylw()
-  #time.sleep(1)
-  #L1.off()
   #
 
 def restartNetwork():
@@ -1707,9 +1753,28 @@ def getHtml():
   return html
   #
 
+class DetectMotion(picamera.array.PiMotionAnalysis):
+  def __init__(self, camera):
+    super(DetectMotion, self).__init__(camera)
+    self.cam = camera
+    self.first=True
+  def analyse(self, a):
+    a = np.sqrt(
+      np.square(a['x'].astype(np.float)) +
+      np.square(a['y'].astype(np.float))
+      ).clip(0, 255).astype(np.uint8)
+    # If there're more than 10 vectors with a magnitude greater
+    # than 60, then say we've detected motion
+    if (a > 50).sum() > 50:
+      if(self.first):
+        self.first = False
+      else:
+        asyncCapture(self.cam)
+
+
 class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
   def do_GET(self):
-    print('do_GET ' + self.path)
+    prnt('do_GET ' + self.path)
     self.protocol_version='HTTP/1.1'
     self.send_response(200, 'OK')
     self.send_header('Content-type', 'text/html')
@@ -1718,20 +1783,45 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
     if(self.path.find("foto=") >= 0):
       cmds = self.path.split('=')#1 name, 2 blitz, ??
       flsCmd = 0
-      if(len(cmds)):
+      drc = 'off'
+      if(len(cmds)>2):
         flsCmd = int(cmds[2])
-      try:
-        cam = picamera.PiCamera()
-        fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
-        cam.close()
-        updateHtml()
-      except Exception as e:
-        prnt(str(e))
+      if(len(cmds)>3):
+        drc = cmds[3]
+      with picamera.PiCamera() as cam:
+        try:
+          cam.drc_strength=drc
+          if(measureLight(cam) < 2):
+            cam.framerate = Fraction(1, 6)
+            cam.shutter_speed = 6000000
+            cam.exposure_mode = 'off'
+            cam.iso = 800
+            time.sleep(5.0)
+          fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
+          cam.close()
+          updateHtml()
+        except Exception as e:
+          #cam.close()
+          prnt(str(e))
       #
     elif(self.path.find("tmlps=") >= 0):
       cmd = self.path.split('=')[1]
     else:
-      html="<html> <head><title> ZenitPi </title> </head> <body>CPU: " + str(getCpuTemp()) + " <br>cmds:<br>http://" + getIp() + "/foto=1<br><br></body></html>"
+      prnt('do_GET else')
+      try:
+        html="<html> <head><title> ZenitPi </title> </head>"
+        html=html+"<body>CPU: " + str(getCpuTemp()) + "<br>"
+        html=html+"cmds:<br>"
+        html=html+"http://" + getIp() + ":" + str(PORT) + "/foto=1<br>"
+        html=html+"DRC:" + str(picamera.PiCamera.DRC_STRENGTHS) + "<br>"
+        html=html+"AWB:" + str(picamera.PiCamera.AWB_MODES) + "<br>"
+        html=html+"EFF:" + str(picamera.PiCamera.IMAGE_EFFECTS) + "<br>"
+        html=html+"EXP:" + str(picamera.PiCamera.EXPOSURE_MODES) + "<br>"
+        html=html+"MET:" + str(picamera.PiCamera.METER_MODES) + "<br>"
+        html=html+"<br></body></html>"
+        prnt(html)
+      except Exception as ex:
+        prnt(str(ex))
     #html = getHtml()
     self.wfile.write(html)  
   def do_POST(self):
@@ -1743,7 +1833,6 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
     for item in form.list:
       logging.error(item)
     SimpleHTTPServer.SimpleHTTPRequestHandler.do_GET(self)
-
 
 Handler = MyRequestHandler
 HTTPD = SocketServer.TCPServer(("", PORT), Handler)
@@ -1762,7 +1851,6 @@ def startHttpdThrd():
   HTTPT = threading.Thread(target=startHttpd)
   HTTPT.setDaemon(1)
   HTTPT.start()
-
 
 def init():
   global I1,I2,I3,Q1,Q2,Q3,Q4,QFLS,IS3,IS0,IS2,IS1,ITRG,IM2,IM1,IM3,IM0
@@ -1949,10 +2037,7 @@ def main(argv):
   wrtTft('exit...')
   G.cleanup()
   status = ST_EXIT
-  #screen.fill(WHITE)
   time.sleep(1.0)
-  #if(wd != 0):
-  #  wd.magic_close()
   eIdleLck.wait()
   pygame.quit()
   HTTPD.shutdown()

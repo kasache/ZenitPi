@@ -34,6 +34,7 @@ class HtmlUi:
     #
   def create(self):
     prnt('create')
+    l = []
     with open(self.www + '/index.html', 'w') as f:
       f.write("<html><head><title>" + self.title + "</title></head><body>\n")
       f.write(str(datetime.now()) + ' img:<br>\n')
@@ -41,6 +42,7 @@ class HtmlUi:
         for name in files:
           f.write('<a href=\"./img/' + name + '\"><img src=\"./img/tmb/'+ name + '\" width=160 alt=\"' + str(time.time()) +  '\" name=\"' + name + '\"/></a>\n')
           prnt(name)
+          l.append(name)
           #
       f.write('<br>\n')
       f.write('video:<br>\n')
@@ -64,6 +66,7 @@ class HtmlUi:
       f.write("</body><html>")
     #self.writeIndex(t)
     #
+    return l
 
 if __name__ == "__main__":
   # skript geht los

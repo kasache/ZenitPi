@@ -81,7 +81,7 @@ ftpSRV = ''
 ftpUSR = ''
 ftpPWD = ''
 ftpRDIR = ''
-
+tmbL = []
 
 #buttons
 I1 = 40
@@ -114,7 +114,7 @@ fnt = 0
 trds = 0
 #Ls = []
 F = 0
-
+LL = 0
 ###                     [3]
 ###             [4]  ___----___[2]--TMLPS
 ###                 /125     60\  [1]--Foto2
@@ -280,12 +280,41 @@ class CamMenu:
     self.L = 3
     self.iSel = 0
     self.iLvl = 0
+    self.iTmb = 0
     self.M = []
     self.M.append(['Bild','Film','<---'])
+    self.M.append(['Vor','Zur.','Zeigen','Loeschen','<---'])
+  def show(self, screen, fnt):
+    prnt('menu show')
+    sl = 10
+    #tmb lesen tmbL
+    if(self.iLvl == 1):
+      img=pygame.image.load(tmbDir + tmbL[self.iTmb])
+      showImg(img)
+      #
+    for i in range(0,len(self.M[self.iLvl])):
+      txt = self.M[self.iLvl][i]
+      if(i==self.iSel):
+        text = ('[' + txt + ']')
+      else:
+        text = (' ' + txt + ' ')
+      txtsrfc = fnt.render(txt, 1, pygame.Color(0,0,0), pygame.Color(255,255,255))
+      txtsrfc = pygame.transform.rotate(txtsrfc,270)
+      h,l=fnt.size(txt)
+      screen.blit(txtsrfc,(sl,(160-h)-1))
+      sl=sl+l
+    #
   def sel(self):
-    prnt('menu selLvlUp')
-    self.iLvl=self.iLvl+1
-    self.iLvl=self.iLvl%len(self.M)    
+    prnt('menu sel')
+    if(self.iSel==len(self.M[self.iLvl])):
+      self.iLvl=self.iLvl-1
+      if(self.iLvl<0):
+        self.iLvl=0
+    if(self.M[self.iLvl][self.iSel] == 'Vor'):
+      self.iTmb=self.iTmb+1
+    if(self.M[self.iLvl][self.iSel] == 'Zur.'):
+      self.iTmb=self.iTmb-1
+    self.iTmb=self.iTmb%len(tmbL)      
     #
   def up(self):
     prnt('menu up')
@@ -688,7 +717,7 @@ def wrtCenterText(txt1, txt2):
   #
 
 def wrtTft(text='', live=0, pos=(1,1)):
-  global screen
+  global screen,fnt
   #prnt('wrtTft' + text)
   font = pygame.font.SysFont("arial", 9, bold=0)
   if(live):
@@ -749,7 +778,7 @@ def wrtTft(text='', live=0, pos=(1,1)):
     txt2 = 'ALLE Bild/Vid. loeschen!'
     wrtCenterText(txt1,txt2)
   elif(status == ST_MENU):
-    text = menu.toString()
+    text = menu.show(screen,fnt)
   elif(status > ST_FOTO_2 and status <= ST_VID_STREAM):
     if(status > ST_FOTO_2 and status < ST_VID_1280):
       txt1 = 'Zeitraffer ...'
@@ -792,11 +821,11 @@ def wrtMode():
   #
 
 def startUpdateUiPeriodic():
-  prnt('>startUpdateUiPeriodic')
+  prnt('startUpdateUiPeriodic>')
   t = threading.Thread(target=updateUiPeriodic)
   t.setDaemon(1)
   t.start()
-  prnt('<startUpdateUiPeriodic')
+  prnt('startUpdateUiPeriodic<')
   #
 
 def updateUiPeriodic():
@@ -975,11 +1004,11 @@ def sendMailAsync():
   #sendMail('click ',atts)
 
 def startCheckMailPeriodic():
-  prnt('>startCheckMailPeriodic')
+  prnt('startCheckMailPeriodic>')
   t = threading.Thread(target=checkMailPeriodic)
   t.setDaemon(1)
   t.start()
-  prnt('<startCheckMailPeriodic')
+  prnt('startCheckMailPeriodic<')
   # 
 
 #alle MCYC Sekunden die emails abrufen
@@ -1119,11 +1148,12 @@ def updateHtmlPeriodic():
   #
 
 def updateHtml():
+  global tmbL
   with updHtmlLck:
     ui = HtmlUi(fileRoot, 'ZenitPi')
     try:
       L1.ylw()
-      ui.create()
+      tmbL = ui.create()
       del ui
       L1.off()
     except Exception as e:
@@ -1177,7 +1207,6 @@ def streamVideo(cam):
           f.write(struct.pack('<L', 0))
         else:
           cam.resolution = (640, 480)
-          cam.start_preview()
           time.sleep(2)
           cam.start_recording(f, format='h264')
           try:
@@ -1284,14 +1313,19 @@ def createTmlps(pics, res, rmPic=False):
 def measureLight(camera):
   pixAverage = 0
   orig_res = camera.resolution
+  orig_iso = camera.iso
   camera.resolution = (400, 300)
+  camera.iso = 400
   with picamera.array.PiRGBArray(camera) as stream:
+    #prnt("measureLight")
     camera.exposure_mode = 'auto'
     camera.awb_mode = 'auto'
+    #camera.iso = 800
     camera.capture(stream, format='rgb')
     pixAverage = int(np.average(stream.array[...,1]))
   prnt("measureLight pixAverage=%i" % pixAverage)
   camera.resolution = orig_res
+  camera.iso = orig_iso
   return pixAverage
 
 def liveRec(cam,dur):
@@ -1538,7 +1572,7 @@ def trg_cllbck(ch):
 
 #GPIO callback fuer HLT
 def hlt_cllbck(ch):
-  global dT,t1,t2,status,eTrgDwn,abort
+  global dT,t1,t2,status,eTrgDwn,abort,status
   try:
     with hltLck:
       L0.ylw()
@@ -1548,7 +1582,7 @@ def hlt_cllbck(ch):
         if(status == ST_PREVIEW):#in vorschau
           camStt.selNext()
         elif(status == ST_MENU):
-          menu.selLvlUp()
+          menu.sel()
         else:
           dT = 0
           t1 = time.time()
@@ -1608,6 +1642,8 @@ def in_cllbck(ch):
           if(ch == I2):
             if(status == ST_PREVIEW):
               camStt.down()
+            elif(status == ST_MENU):
+              menu.down()
             elif(status == ST_IDLE):
               dT1 = 0
               t3 = time.time()
@@ -1618,6 +1654,8 @@ def in_cllbck(ch):
           elif(ch == I1):
             if(status == ST_PREVIEW):
               camStt.up()
+            elif(status == ST_MENU):
+              menu.up()
             elif(status == ST_IDLE):
               dT1 = 0
               t3 = time.time()
@@ -1774,13 +1812,15 @@ class DetectMotion(picamera.array.PiMotionAnalysis):
 
 class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
   def do_GET(self):
-    prnt('do_GET ' + self.path)
+    global LL
+    prnt('do_GET>' + self.path)
     self.protocol_version='HTTP/1.1'
     self.send_response(200, 'OK')
     self.send_header('Content-type', 'text/html')
     self.end_headers()
     html="<html><head><title> ZenitPi </title> </head><body>CPU: " + getCpuTemp() + " <br></body></html>"
     if(self.path.find("foto=") >= 0):
+      #prnt('do_GET 1')
       cmds = self.path.split('=')#1 name, 2 blitz, ??
       flsCmd = 0
       drc = 'off'
@@ -1789,14 +1829,22 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
       if(len(cmds)>3):
         drc = cmds[3]
       with picamera.PiCamera() as cam:
+        #prnt('do_GET 2')
         try:
           cam.drc_strength=drc
-          if(measureLight(cam) < 2):
-            cam.framerate = Fraction(1, 6)
-            cam.shutter_speed = 6000000
+          ll = measureLight(cam)
+          l = (LL+ll)/2
+          if(l < 20):
+            cam.framerate = Fraction(1, 6*(2**l))
+            cam.shutter_speed = 6000000/(2**l)
             cam.exposure_mode = 'off'
             cam.iso = 800
+            #cam.exposure_compensation = 25/(2**l)
             time.sleep(5.0)
+          else:
+            #cam.exposure_compensation = 0
+            time.sleep(3.0)
+          LL = l
           fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
           cam.close()
           updateHtml()
@@ -1823,7 +1871,8 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
       except Exception as ex:
         prnt(str(ex))
     #html = getHtml()
-    self.wfile.write(html)  
+    self.wfile.write(html)
+    prnt('do_GET<')
   def do_POST(self):
     logging.error(self.headers)
     form = cgi.FieldStorage(
@@ -1987,7 +2036,6 @@ def main(argv):
             cam = picamera.PiCamera()
             #cam.resolution = (2592,1944)
             cam.resolution = (160,128)
-            cam.start_preview()
             if(status == ST_IDLE):
               prnt('ITRG ' + str(G.input(ITRG)))
               L0.ylw()

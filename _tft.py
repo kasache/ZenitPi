@@ -1835,8 +1835,10 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
           ll = measureLight(cam)
           l = (LL+ll)/2
           if(l < 20):
-            cam.framerate = Fraction(1, 6*(2**l))
-            cam.shutter_speed = 6000000/(2**l)
+            if(l == 0):
+              l = 1
+            cam.framerate = Fraction(1, 6*l)
+            cam.shutter_speed = 6000000/l
             cam.exposure_mode = 'off'
             cam.iso = 800
             #cam.exposure_compensation = 25/(2**l)
@@ -1850,7 +1852,7 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
           updateHtml()
         except Exception as e:
           #cam.close()
-          prnt(str(e))
+          prnt('ex:' + str(e))
       #
     elif(self.path.find("tmlps=") >= 0):
       cmd = self.path.split('=')[1]

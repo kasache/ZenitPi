@@ -865,6 +865,18 @@ def updateUi():
         prnt(str(e))
     #
 
+def showAllJpg():
+  global status
+  if(status == ST_IDLE):
+    for root, dirs, files in os.walk(tmbDir, topdown=True):
+      for name in files:
+        st = status
+        status = ST_REPLAY
+        img=pygame.image.load(tmbDir+name)
+        showImg(img)
+        time.sleep(3.0)
+        status = st
+
 def playAllVid():
   global status
   if(status == ST_IDLE):
@@ -880,7 +892,8 @@ def playVid(vid):
   if(status == ST_IDLE):
     st = status
     status = ST_REPLAY
-    sysCall('mplayer -vf rotate=1 -vo fbdev2:/dev/fb1 -x 160 -y 90 -framedrop -zoom ' + vid)
+    sysCall('mplayer -vf rotate=1 -vo fbdev2:/dev/fb1 -x 80 -y 64 -framedrop -zoom ' + vid)
+    #sysCall('mplayer -vf rotate=1 -vo fbdev2:/dev/fb1 -x 160 -y 90 -framedrop -zoom ' + vid)
     status = st
 
 def sysCall(cmd, log=True):
@@ -970,7 +983,7 @@ def mailCllb(addr, cmd):
           #if(len(cmd)>3):
           #  md = ST_FOTO_2
           f = manuTrg(cam, fn=f, fls=fl, mode=md)
-        #cam.close()
+        #f = extern_trigger('')
         att=[]
         #prnt('sende ' + fn)
         att.append(f)
@@ -1696,7 +1709,8 @@ def in_cllbck(ch):
                 createTmlps(pics, reso)
                 updateHtml()
               elif(dT1>5.0):
-                playAllVid()
+                showAllJpg()
+                #playAllVid()
               else:
                 wrtTft('Keine Funktion')
               #status = ST_IDLE
@@ -1778,6 +1792,46 @@ def diag():
     #for
   #diag
 
+def extern_trigger(_command):
+  global LL
+  fn = ''
+  if(_command.find("foto=") >= 0):
+    #prnt('do_GET 1')
+    cmds = self.path.split('=')#1 name, 2 blitz, ??
+    flsCmd = 0
+    drc = 'off'
+    if(len(cmds)>2):
+      flsCmd = int(cmds[2])
+    if(len(cmds)>3):
+      drc = cmds[3]
+    with picamera.PiCamera() as cam:
+      #prnt('do_GET 2')
+      try:
+        cam.drc_strength=drc
+        ll = measureLight(cam)
+        l = (LL+ll)/2
+        if(l < 20):
+          if(l == 0):
+            l = 1
+          cam.framerate = Fraction(1, 6*l)
+          cam.shutter_speed = 6000000/l
+          cam.exposure_mode = 'off'
+          cam.iso = 800
+          #cam.exposure_compensation = 25/(2**l)
+          time.sleep(5.0)
+        else:
+          #cam.exposure_compensation = 0
+          time.sleep(3.0)
+        LL = l
+        fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
+        cam.close()
+      except Exception as e:
+        #cam.close()
+        prnt('ex:' + str(e))
+      #
+  return fn
+  #
+
 def getHtml():
   html='<html><head><title> ZenitPi </title> </head><body>CPU: ' + getCpuTemp() + ' <br>'
   files = os.listdir(tmbDir)
@@ -1821,38 +1875,8 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
     html="<html><head><title> ZenitPi </title> </head><body>CPU: " + getCpuTemp() + " <br></body></html>"
     if(self.path.find("foto=") >= 0):
       #prnt('do_GET 1')
-      cmds = self.path.split('=')#1 name, 2 blitz, ??
-      flsCmd = 0
-      drc = 'off'
-      if(len(cmds)>2):
-        flsCmd = int(cmds[2])
-      if(len(cmds)>3):
-        drc = cmds[3]
-      with picamera.PiCamera() as cam:
-        #prnt('do_GET 2')
-        try:
-          cam.drc_strength=drc
-          ll = measureLight(cam)
-          l = (LL+ll)/2
-          if(l < 20):
-            if(l == 0):
-              l = 1
-            cam.framerate = Fraction(1, 6*l)
-            cam.shutter_speed = 6000000/l
-            cam.exposure_mode = 'off'
-            cam.iso = 800
-            #cam.exposure_compensation = 25/(2**l)
-            time.sleep(5.0)
-          else:
-            #cam.exposure_compensation = 0
-            time.sleep(3.0)
-          LL = l
-          fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
-          cam.close()
-          updateHtml()
-        except Exception as e:
-          #cam.close()
-          prnt('ex:' + str(e))
+      fn = extern_trigger(self.path)
+      updateHtml()
       #
     elif(self.path.find("tmlps=") >= 0):
       cmd = self.path.split('=')[1]

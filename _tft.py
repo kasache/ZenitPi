@@ -1708,7 +1708,7 @@ def in_cllbck(ch):
                 reso = (2592,1944)
                 createTmlps(pics, reso)
                 updateHtml()
-              elif(dT1>5.0):
+              elif(dT1>1.0):
                 showAllJpg()
                 #playAllVid()
               else:
@@ -1796,8 +1796,8 @@ def extern_trigger(_command):
   global LL
   fn = ''
   if(_command.find("foto=") >= 0):
-    #prnt('do_GET 1')
-    cmds = self.path.split('=')#1 name, 2 blitz, ??
+    #prnt('extern_trigger 1')
+    cmds = _command.split('=')#1 name, 2 blitz, ??
     flsCmd = 0
     drc = 'off'
     if(len(cmds)>2):

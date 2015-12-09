@@ -107,9 +107,18 @@ class ZenitMail():
         self.log(str(nm))
         if(len(ext)>0):
           ex = ext[len(ext)-1]
-          if (ex == 'jpg' or ex == 'png'):
+          if (ex == 'jpg'):
             self.log('attach MIMEImage')
-            msg.attach(MIMEImage(file(f).read()))
+            try:
+              msg.attach(MIMEImage(file(f).read(),_subtype="jpeg"))
+            except Exception as e:
+              self.log('createMsg:' + str(e))
+          elif (ex == 'png'):
+            self.log('attach MIMEImage')
+            try:
+              msg.attach(MIMEImage(file(f).read(),_subtype="png"))
+            except Exception as e:
+              self.log('createMsg:' + str(e))
           else:
             msg.attach( MIMEText(f) )
             att = MIMEBase('application', 'octet-stream')

@@ -52,6 +52,7 @@ t2 = 0
 t3 = 0
 t4 = 0
 dT1 = 0
+dT2 = 0
 dTrg = 0
 trg1 = 0
 trg2 = 0
@@ -133,8 +134,8 @@ LL = 0
 tmlpsCmd = 'sudo raspistill -ISO %s -ex %s -awb %s -ifx %s -w %s -h %s -o /home/www/img/pic$DT.jpg'
 
 #         [0           1           2        3        4        5        6        7                     8        9
-modDscr = ['Foto Auto','Foto Semi','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Zeitraffer frei ','Bewegung ','Video 1280  ','Video 640  ']
-modDscrShrt = ['F(A)','F(S)','Zeitraf. ','Zeitraf. ','Zeitraf. ','Zeitraf. frei ','Bew. ','Zeitraf. CRON ','V1280 ','V640 ']
+modDscr = ['Foto Auto','Foto Semi','Foto M ','Zeitraffer ','Zeitraffer ','Zeitraffer ','Bewegung ','Zeitraffer CRONTAB ','Video 1280  ','Video 640  ']
+modDscrShrt = ['F(A) ','F(S) ','F(M) ','Zeitraf. ','Zeitraf. ','Zeitraf. ','Bew. ','Zeitraf. CRON ','V1280 ','V640 ']
 #                 0       1       2        3        4       5       6       7        8                9
 cronTmlpsModDscr = ['1_min','5_min','15_min','30_min','1_std','3_std','6_std','11_uhr','1_std_9_18_uhr','3_std_9_18_uhr']
 
@@ -153,11 +154,11 @@ ST_HOLD_I1 = 12
 ST_HOLD_I2 = 13
 ST_FOTO_1 = 20
 ST_FOTO_2 = 21
-ST_TMLPS_1 = 22
-ST_TMLPS_2 = 23
-ST_TMLPS_3 = 24
-#ST_TMLPS_4 = 25
-ST_TMLPS_FREE = 25
+ST_FOTO_3 = 22
+ST_TMLPS_1 = 23
+ST_TMLPS_2 = 24
+ST_TMLPS_4 = 25
+#ST_TMLPS_FREE = 25
 ST_MOTIONDETECT = 26
 ST_TMLPS_CRON = 27
 ST_VID_1280 = 28
@@ -399,13 +400,16 @@ class CamSettings:
     t = self.Itv[self.Set]
     if(st==ST_TMLPS_CRON):
       t = self.CronItv[self.Set%len(self.CronItv)]
-    elif(st!=ST_TMLPS_FREE):
+    #elif(st==ST_TMLPS_FREE):
+    #  t = -1
+    else:
       t = self.Itv[st-ST_TMLPS_1+1]
     return t
     #
   def getCnt(self,st):
     cc = 50000
-    if(st!=ST_TMLPS_FREE and st!=ST_TMLPS_CRON):
+    #if(st!=ST_TMLPS_FREE and st!=ST_TMLPS_CRON):
+    if(st!=ST_TMLPS_CRON):
       cc = 100*(2**self.Set)
       #
     self.ImgCnt = cc
@@ -419,9 +423,9 @@ class CamSettings:
     st = nMod+ST_FOTO_1
     if(st == ST_TMLPS_CRON):
       res = self.getPer(st)#abstand zw. aufnahmen (1min,1std,1tag)
-    elif(st == ST_TMLPS_FREE):
-      res = self.getPer(st)#abstand zw. aufnahmen, sekunden oder trigger
-    elif(st >= ST_TMLPS_1 and st < ST_TMLPS_FREE):
+      #elif(st == ST_TMLPS_FREE):
+      #  res = self.getPer(st)#abstand zw. aufnahmen, sekunden oder trigger
+    elif(st >= ST_TMLPS_1 and st < ST_TMLPS_4):
       res = self.getCnt(st)#anzahl bilder
     elif(st == ST_VID_1280 or st == ST_VID_640):
       res = self.getDur()#dauer aufnahme
@@ -550,12 +554,12 @@ class CamSettings:
   def toStrSet(self,sel):
     s=str(self.getSet())
     st = nMod+ST_FOTO_1
-    if(st == ST_TMLPS_FREE):
-      if(self.Set == 0):
-        s = ' TRG'
-      else:
-        s=s+' sek.'
-    elif(st >= ST_TMLPS_1 and st < ST_TMLPS_FREE):
+    #if(st == ST_TMLPS_FREE):
+    #  if(self.Set == 0):
+    #    s = ' TRG'
+    #  else:
+    #    s=s+' sek.'
+    if(st >= ST_TMLPS_1 and st < ST_TMLPS_4):
       s=s+'x'
     elif(st == ST_VID_1280 or st == ST_VID_640):
       s=str(self.getDur())+' sek.'
@@ -589,9 +593,9 @@ class DuoLed:
       G.output((self.r,self.g),0)
     except Exception as e:
       prnt('L.off' + str(e))  
-  def red(self):
+  def red(self, frc=0):
     try:
-      if(self.dark()):
+      if(self.dark() and frc==0):
         return
       G.output((self.r,self.g),0)
       G.output(self.r,1)
@@ -605,9 +609,9 @@ class DuoLed:
       G.output(self.g,1)
     except Exception as e:
       prnt('L.grn ' + str(e))  
-  def ylw(self):
+  def ylw(self, frc=0):
     try:
-      if(self.dark()):
+      if(self.dark() and frc==0):
         return
       G.output((self.r,self.g),0)
       G.output((self.r,self.g),1)
@@ -635,9 +639,9 @@ def holdI1_10():
     L0.red()
 
 def holdI2_10():
-  global L0,dT1
-  prnt('holdI2_10 ' + str(dT1))
-  if(dT1==0 and G.input(I2)==0):
+  global L0,dT2
+  prnt('holdI2_10 ' + str(dT2))
+  if(dT2==0 and G.input(I2)==0):
     L1.red()
   #
 def holdI1_5():
@@ -647,9 +651,9 @@ def holdI1_5():
     L0.ylw()
 
 def holdI2_5():
-  global L0,dT1
-  prnt('holdI2_10 ' + str(dT1))
-  if(dT1==0 and G.input(I2)==0):
+  global L0,dT2
+  prnt('holdI2_10 ' + str(dT2))
+  if(dT2==0 and G.input(I2)==0):
     L1.grn()
   #
 
@@ -657,13 +661,13 @@ def ledHalt():
   global L1,dT
   prnt('ledHalt ' + str(dT))
   if(dT==0 and G.input(I3)==0):
-    L1.red()
+    L1.red(frc=1)
   #
 def ledReboot():
   global L1,dT
   prnt('ledReboot ' + str(dT))
   if(dT==0 and G.input(I3)==0):
-    L1.ylw()
+    L1.ylw(frc=1)
   #
 def ledExit():
   global L1,dT
@@ -717,7 +721,7 @@ def wrtCenterText(txt1, txt2):
   #
 
 def wrtTft(text='', live=0, pos=(1,1)):
-  global screen,fnt
+  global screen,fnt,status
   #prnt('wrtTft' + text)
   font = pygame.font.SysFont("arial", 9, bold=0)
   if(live):
@@ -728,7 +732,7 @@ def wrtTft(text='', live=0, pos=(1,1)):
     text = camStt.toStringExp()
     #linie
     pygame.draw.line(screen, WHITE, [64, 0], [64,159], 1)
-    if((nMod+ST_FOTO_1) > ST_FOTO_2):
+    if((nMod+ST_FOTO_1) > ST_FOTO_3):
       pygame.draw.line(screen, RED, [19, 0], [19,159], 1)
       pygame.draw.line(screen, RED, [109, 0], [109,159], 1)
     #
@@ -779,8 +783,8 @@ def wrtTft(text='', live=0, pos=(1,1)):
     wrtCenterText(txt1,txt2)
   elif(status == ST_MENU):
     text = menu.show(screen,fnt)
-  elif(status > ST_FOTO_2 and status <= ST_VID_STREAM):
-    if(status > ST_FOTO_2 and status < ST_VID_1280):
+  elif(status > ST_FOTO_3 and status <= ST_VID_STREAM):
+    if(status > ST_FOTO_3 and status < ST_VID_1280):
       txt1 = 'Zeitraffer ...'
       font1 = pygame.font.SysFont("arial", 11, bold=1)
       txtsrfc = font1.render(txt1, 1, pygame.Color(255,255,0), pygame.Color(0,0,255))
@@ -797,7 +801,7 @@ def wrtTft(text='', live=0, pos=(1,1)):
     txtsrfc=pygame.transform.rotate(txtsrfc,270)
     h,l=font.size(txt1)
     screen.blit(txtsrfc,(115,(160-h)-1))
-  txtsrfc = font.render(text, 1, pygame.Color(0,0,0), pygame.Color(255,255,255))
+  txtsrfc = font.render(text + '(' + str(status) + ')', 1, pygame.Color(0,0,0), pygame.Color(255,255,255))
   txtsrfc=pygame.transform.rotate(txtsrfc,270)
   screen.blit(txtsrfc,pos)
   #
@@ -808,11 +812,11 @@ def wrtTft(text='', live=0, pos=(1,1)):
 def wrtMode():
   #
   text = ' '
-  st = nMod+ST_FOTO_1
   readMS()
+  st = nMod+ST_FOTO_1
   if(st == ST_TMLPS_CRON):
     text = text + cronTmlpsModDscr[nSet%len(cronTmlpsModDscr)]
-  elif(st >= ST_TMLPS_1 and st < ST_TMLPS_FREE):
+  elif(st >= ST_TMLPS_1 and st < ST_TMLPS_4):
     text = text + ' B, ' + str(camStt.getPer(st)) + ' T'
   else:
     text = camStt.toStrSet(9)
@@ -935,7 +939,7 @@ def capt(cam):
       att.append(imgDir + fn)
       #zm.sendMail('bewegung erkannt ', _text='', _files=att)
     except Exception as ex:
-      prnt(str(ex))
+      prnt('capt ' + str(ex))
 
 def asyncCapture(cam):
   prnt('asyncCapture')
@@ -943,7 +947,7 @@ def asyncCapture(cam):
     t = threading.Thread(target=capt, args=(cam,))
     t.start()
   except Exception as ex:
-    prnt(str(ex))
+    prnt('asyncCapture ' + str(ex))
   #
 
 
@@ -957,49 +961,35 @@ def mailCllb(addr, cmd):
     if(ctm == 'none' and (status == ST_IDLE or status == ST_VID_STREAM)):
       L0.red()
       if(cmd[0].lower() == 'help'):
-        txt = 'Betreff: trigger flash iso mode effect ' + str() +'\n' 
+        txt = 'Gueltiger Betreff: trigger foto=name.jpg=flash=iso=mode=effect\n' 
         txt = txt + 'flash  0 / 1 \n'
         txt = txt + 'iso    0..800 \n'
         txt = txt + 'mode   ' + str(camStt.ExpMod) +'\n'
         txt = txt + 'effect ' + str(camStt.ImgEff) +'\n'
         zm.sendMail('Re: ' + cmd[0], _text=txt, _send_to=to)
       elif(cmd[0].lower() == 'trigger'):
-        f = ''
-        with picamera.PiCamera() as cam:
-          fl=1
-          md=ST_FOTO_1
-          if(len(cmd)>1):
-            fl=int(cmd[1])
-          if(len(cmd)>2):
-            #cam.exposure_compensation = self.ExpCps[self.iExpCps]
-            cam.iso = int(cmd[2])
-          if(len(cmd)>3):
-            if cmd[3] in camStt.ExpMod:
-              cam.exposure_mode = cmd[3]
-          if(len(cmd)>4):
-            if cmd[4] in camStt.ImgEff:
-              cam.image_effect = cmd[4]
-            #cam.awb_mode = self.AwbMod[self.iAwbMod]
-          #if(len(cmd)>3):
-          #  md = ST_FOTO_2
-          f = manuTrg(cam, fn=f, fls=fl, mode=md)
-        #f = extern_trigger('')
+        f = extern_trigger(cmd[1])
         att=[]
         #prnt('sende ' + fn)
         att.append(f)
         zm.sendMail('Re: ' + cmd[0], _text='echo', _send_to=to, _files=att)
+        #sysCall('rm -f ' + f)
       elif(cmd[0].lower() == 'stream'):
         if(cmd[1].lower() == '0'):
           abort = 1
         else:
           startStreamAsync()
           zm.sendMail('Re: ' + cmd[0], _text='tcp/h264://' + getIp() + ':8000', _send_to=to)
+      elif(cmd[0].lower() == 'delete_mails'):
+        zm.deleteAllSeen()
       L0.grn()
       #prnt('sollte mail senden an ' + addr)
+    elif(ctm != 'none'):
+      zm.sendMail(ctm, _text=':P', _send_to=to)
     else:
       zm.sendMail('hab grad was anderes zu tun', _text=':P', _send_to=to)
   except Exception as e:
-    prnt(str(e))
+    prnt('mailCallb ' + str(e))
     L1.red()
   eIdleLck.set()
   #mailClbk
@@ -1026,21 +1016,25 @@ def startCheckMailPeriodic():
 
 #alle MCYC Sekunden die emails abrufen
 def checkMailPeriodic():
-  while(status >= ST_IDLE):
+  readMS()
+  st = status
+  #if(st == ST_IDLE):
+  #  st = nMod+ST_FOTO_1
+  while(st >= ST_IDLE):
     time.sleep(MCYC)
-    #prnt('checkMailPeriodic')
+    prnt('checkMailPeriodic ' + str(status))
     try:
-      if(status == ST_IDLE or status == ST_VID_STREAM):
+      if(st == ST_IDLE or st == ST_VID_STREAM or st == ST_TMLPS_CRON):
         L1.ylw()
         if(hasInet()):
-          #prnt('checkMailPeriodic abrufen')
+          #prnt('getSubscribers')
           zm.getSubscribers()
-          #prnt('checkMailPeriodic fertig')
+          prnt('copyOutstandingAsync')
           copyOutstandingAsync()
         else:
           restartNetwork()
     except Exception as ex:
-      prnt(str(ex))
+      prnt('checkMailPeriodic ' + str(ex))
     L1.off()
   #
 
@@ -1065,7 +1059,7 @@ def copyOutstandingFtp():
       else:
         break;
   except Exception as ex:
-    prnt(str(ex))
+    prnt('copyOutstandingFtp ' + str(ex))
 
 def copyOutstandingAsync():
   t = threading.Thread(target=copyOutstandingFtp)
@@ -1083,12 +1077,12 @@ def deleteAll(filter=''):
         sysCall('rm -f ' + tmbDir +'*.jpg')
         sysCall('rm -f ' + vidDir +'*.avi')
         sysCall('rm -f ' + vidDir +'*.h264')
-        sysCall('rm -f ' + fileRoot +'*.txt')
+        sysCall('rm -f ' + fileRoot +'logBefore*.txt')
       elif(filter=='tmlps'):
         sysCall('rm -f ' + imgDir + 'pic*.jpg')
       zm.deleteAllSeen()
   except Exception as e:
-    prnt(str(e))
+    prnt('deleteAll ' + str(e))
   eIdleLck.set()
 
 #schreibe Liste (l) in die Datei (fi) 
@@ -1110,7 +1104,7 @@ def isCronTmlps():
       if(res == 'none' and os.path.exists(f)):
         res = ctm
   except Exception as e:
-    prnt(str(e))
+    prnt('isCronTmlps ' + str(e))
     L1.red()
   #prnt('isCronTmlps< ' + res)
   return res;
@@ -1170,7 +1164,7 @@ def updateHtml():
       del ui
       L1.off()
     except Exception as e:
-      prnt(str(e))
+      prnt('updateHtml ' + str(e))
       L1.red()
     gc.collect()
   #
@@ -1241,7 +1235,7 @@ def streamVideo(cam):
         conn.close()
         _socket.close()
     except Exception as e:
-      prnt(str(e))
+      prnt('streamVideo ' + str(e))
   status = lst
   #
 
@@ -1316,7 +1310,7 @@ def createTmlps(pics, res, rmPic=False):
       prnt(str(e))
       L0.ylw()
   except  Exception as e:
-    prnt(str(e))
+    prnt('createTmlps' + str(e))
   L0.grn()
   status = st
   prnt('<createTmlps')
@@ -1342,6 +1336,7 @@ def measureLight(camera):
   return pixAverage
 
 def liveRec(cam,dur):
+  global abort
   ts = time.time()
   tt = time.time()
   while((tt - ts) < dur and abort!=1):
@@ -1376,10 +1371,12 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
   status = mode
   abort = 0
   L0.ylw()
-  if(status == ST_FOTO_1 or status == ST_FOTO_2):
+  if(status == ST_FOTO_1 or status == ST_FOTO_2 or status == ST_FOTO_3):
     #einzelbild
     if(sett < 3):
-      if(fn == ''):
+      if(status == ST_FOTO_3):
+        fn=('pic{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
+      elif(fn == ''):
         fn=('pi{:%Y-%m-%d-%H-%M-%S}.jpg').format(datetime.now())
       #elif(fn=='yuv'):
       #prnt('capture ' + fn)
@@ -1397,14 +1394,11 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
         F = imgDir + fn
       except Exception as e:
         #cam.close()
-        prnt(str(e))
+        prnt('manuTrg FOTO' + str(e))
       if(fls==1):
         G.output(QFLS,0)
       ctm = isCronTmlps()
-      if(ctm != 'none'):
-        #if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
-        #  sysCall('rm -f '+ imgDir + fn)
-        #else:
+      if(ctm != 'none' or status == ST_FOTO_3):
         lstFilesToSend.append(fn)
       elif(status == ST_FOTO_1):#nicht bei foto_2
         createTmb(imgDir + fn)
@@ -1431,7 +1425,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
     liveRec(cam,dur)
     cam.stop_recording()
     prnt('... stop vid')
-  elif(status >= ST_TMLPS_1 and status <= ST_TMLPS_FREE):
+  elif(status >= ST_TMLPS_1 and status <= ST_TMLPS_4):
     prnt('tmlps start ...')
     prnt('rm old imgs')
     sysCall('rm -f '+imgDir+'pic*.jpg')
@@ -1441,7 +1435,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
     if(cs > 1500):
       cam.resolution = (1280,720)
     try:
-      prnt('cont start ' +str(cc) + 'x ' + str(cs) + 's')
+      prnt('tmlps start ' +str(cc) + 'x ' + str(cs) + 's')
       tt = time.time()
       pics = []
       L0.red()
@@ -1474,7 +1468,7 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
           #
         if(i == cc or abort==1 or status==ST_EXIT or checkDiskSpace()==0):
           wrtTft('stop rec tmlps')
-          prnt('tmlps stop/abort')
+          prnt('tmlps stop/abort ' + str(i) + ' ' + str(abort))
           break
           #
         L0.red()
@@ -1531,7 +1525,8 @@ def manuTrg(cam, fn='', fls=1, mode=0, sett=0):
 
 #GPIO callback fuer Ausloeser
 def trg_cllbck(ch):
-  global dTrg,trg1,trg2,eTrgDwn,abort,cntTrgUp,cntTrgDwn
+  global dTrg,trg1,trg2,eTrgDwn,abort,cntTrgUp,cntTrgDwn,status
+  readMS()
   prnt('>trg_cllbck')
   if(status > ST_EXIT):
     try:
@@ -1548,9 +1543,10 @@ def trg_cllbck(ch):
               dTrg = trg2-trg1
               prnt('up ITRG ' + str(dTrg))
               #eTrgDwn.clear()
-              if(status == ST_TMLPS_FREE):
-                if(dTrg>5.0):
-                  abort = 1
+              #if(status == ST_TMLPS_FREE):
+              #  if(dTrg>5.0):
+              #    prnt('dTrg ' + str(dTrg))
+              #    abort = 1
             else:
               prnt('invalid trg up')
             #
@@ -1559,10 +1555,13 @@ def trg_cllbck(ch):
               cntTrgDwn = cntTrgDwn+1
               prnt('down ITRG')
               trg1 = time.time()
+              trg2 = 0
               dTrg = 0
-              if (status == ST_IDLE or status == ST_TMLPS_FREE):
+              if (status == ST_IDLE or status == ST_TMLPS_CRON):
+              #if (status == ST_IDLE):
                 eTrgDwn.set()
               else:
+                wrtTft('BUSY')
                 prnt('skip trg edge due to status == ' + str(status))
             else:
               prnt('invalid trg down')
@@ -1634,7 +1633,7 @@ def hlt_cllbck(ch):
 
 #GPIO callback fuer IN1 und IN2
 def in_cllbck(ch):
-  global eTrgDwn,abort,t3,t4,dT1,status
+  global eTrgDwn,abort,t3,t4,dT1,dT2,status
   try:
     with inLck:
       st = G.input(ch)
@@ -1649,6 +1648,7 @@ def in_cllbck(ch):
       #
       if(status > ST_PREVIEW):
         abort = 1
+        #eTrgDwn.set()
         prnt('abort TMLPS...')
       else:
         if(st == 0):
@@ -1658,7 +1658,8 @@ def in_cllbck(ch):
             elif(status == ST_MENU):
               menu.down()
             elif(status == ST_IDLE):
-              dT1 = 0
+              dT2 = 0
+              t4 = 0
               t3 = time.time()
               threading.Timer(10, holdI2_10, ()).start()
               threading.Timer(5, holdI2_5, ()).start()
@@ -1671,6 +1672,7 @@ def in_cllbck(ch):
               menu.up()
             elif(status == ST_IDLE):
               dT1 = 0
+              t4 = 0
               t3 = time.time()
               threading.Timer(10, holdI1_10, ()).start()
               threading.Timer(5, holdI1_5, ()).start()
@@ -1684,12 +1686,12 @@ def in_cllbck(ch):
           if(ch == I2):
             if(status == ST_IDLE):
               t4 = time.time()
-              dT1 = t4-t3
-              if(dT1>10.0):
+              dT2 = t4-t3
+              if(dT2>10.0):
                 deleteAll()
                 updateHtml()
                 L1.off()
-              elif(dT1>5.0):
+              elif(dT2>5.0):
                 sendMailAsync()
               else:
                 wrtTft('Keine Funktion')
@@ -1795,15 +1797,12 @@ def diag():
 def extern_trigger(_command):
   global LL
   fn = ''
+  #foto=name.jpg=flash=iso=mode=effect=drc
   if(_command.find("foto=") >= 0):
     #prnt('extern_trigger 1')
-    cmds = _command.split('=')#1 name, 2 blitz, ??
+    cmds = _command.split('=')
     flsCmd = 0
     drc = 'off'
-    if(len(cmds)>2):
-      flsCmd = int(cmds[2])
-    if(len(cmds)>3):
-      drc = cmds[3]
     with picamera.PiCamera() as cam:
       #prnt('do_GET 2')
       try:
@@ -1823,6 +1822,18 @@ def extern_trigger(_command):
           #cam.exposure_compensation = 0
           time.sleep(3.0)
         LL = l
+        if(len(cmds)>2):#flash
+          flsCmd = int(cmds[2])
+        if(len(cmds)>3):#iso
+          cam.iso = int(cmds[3])
+        if(len(cmds)>4):#mode
+          if cmd[4] in camStt.ExpMod:
+            cam.exposure_mode = cmd[4]
+        if(len(cmds)>5):#effect
+          if cmd[5] in camStt.ImgEff:
+            cam.image_effect = cmd[5]
+        if(len(cmds)>6):#drc
+          drc = cmds[6]
         fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
         cam.close()
       except Exception as e:
@@ -1895,7 +1906,7 @@ class MyRequestHandler (SimpleHTTPServer.SimpleHTTPRequestHandler):
         html=html+"<br></body></html>"
         prnt(html)
       except Exception as ex:
-        prnt(str(ex))
+        prnt('do_GET ' + str(ex))
     #html = getHtml()
     self.wfile.write(html)
     prnt('do_GET<')
@@ -1935,11 +1946,11 @@ def init():
   res = True
   G.setmode(G.BOARD)
   G.setup(I1,G.IN,pull_up_down=G.PUD_UP)
-  G.add_event_detect(I1, G.BOTH, callback=in_cllbck, bouncetime=50)
+  G.add_event_detect(I1, G.BOTH, callback=in_cllbck, bouncetime=100)
   G.setup(I2,G.IN,pull_up_down=G.PUD_UP)
-  G.add_event_detect(I2, G.BOTH, callback=in_cllbck, bouncetime=50)
+  G.add_event_detect(I2, G.BOTH, callback=in_cllbck, bouncetime=100)
   G.setup(I3,G.IN,pull_up_down=G.PUD_UP)
-  G.add_event_detect(I3, G.BOTH, callback=hlt_cllbck, bouncetime=50)
+  G.add_event_detect(I3, G.BOTH, callback=hlt_cllbck, bouncetime=100)
   G.setup(ITRG,G.IN,pull_up_down=G.PUD_UP)
   #G.add_event_detect(ITRG, G.FALLING)
   if(ESYNC):
@@ -1984,6 +1995,8 @@ def init():
   zm.add_observer(mailCllb)
   #check inet
   checkTime()
+  #hdmi ausschalten
+  sysCall('/usr/bin/tvservice -o')
   status = ST_IDLE
   if(G.input(I1) == 0 and G.input(I2) == 0):
     prnt('off')

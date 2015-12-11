@@ -1804,24 +1804,8 @@ def extern_trigger(_command):
     flsCmd = 0
     drc = 'off'
     with picamera.PiCamera() as cam:
-      #prnt('do_GET 2')
+      prnt('extern_trigger cmds ' + str(cmds))
       try:
-        cam.drc_strength=drc
-        ll = measureLight(cam)
-        l = (LL+ll)/2
-        if(l < 20):
-          if(l == 0):
-            l = 1
-          cam.framerate = Fraction(1, 6*l)
-          cam.shutter_speed = 6000000/l
-          cam.exposure_mode = 'off'
-          cam.iso = 800
-          #cam.exposure_compensation = 25/(2**l)
-          time.sleep(5.0)
-        else:
-          #cam.exposure_compensation = 0
-          time.sleep(3.0)
-        LL = l
         if(len(cmds)>2):#flash
           flsCmd = int(cmds[2])
         if(len(cmds)>3):#iso
@@ -1834,6 +1818,23 @@ def extern_trigger(_command):
             cam.image_effect = cmd[5]
         if(len(cmds)>6):#drc
           drc = cmds[6]
+        cam.drc_strength=drc
+        ll = measureLight(cam)
+        l = (LL+ll)/2
+        if(l < 20):
+          if(l == 0):
+            l = 1
+          prnt('extern_trigger nacht')
+          cam.framerate = Fraction(1, 6*l)
+          cam.shutter_speed = 6000000/l
+          cam.exposure_mode = 'off'
+          cam.iso = 800
+          #cam.exposure_compensation = 25/(2**l)
+          time.sleep(5.0)
+        else:
+          #cam.exposure_compensation = 0
+          time.sleep(3.0)
+        LL = l
         fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
         cam.close()
       except Exception as e:

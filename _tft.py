@@ -958,10 +958,11 @@ def mailCllb(addr, cmd):
     to=[]
     to.append(addr)
     ctm = isCronTmlps()
-    if(ctm == 'none' and (status == ST_IDLE or status == ST_VID_STREAM)):
+    #if(ctm == 'none' and (status == ST_IDLE or status == ST_VID_STREAM)):
+    if(status == ST_IDLE or status == ST_VID_STREAM):
       L0.red()
       if(cmd[0].lower() == 'help'):
-        txt = 'Gueltiger Betreff: trigger foto=name.jpg=flash=iso=mode=effect\n' 
+        txt = 'Gueltiger Betreff: trigger foto=name.jpg=flash=iso=mode=effect=expc\n' 
         txt = txt + 'flash  0 / 1 \n'
         txt = txt + 'iso    0..800 \n'
         txt = txt + 'mode   ' + str(camStt.ExpMod) +'\n'
@@ -974,7 +975,7 @@ def mailCllb(addr, cmd):
         att.append(f)
         zm.sendMail('Re: ' + cmd[0], _text='echo', _send_to=to, _files=att)
         #sysCall('rm -f ' + f)
-      elif(cmd[0].lower() == 'stream'):
+      elif(ctm == 'none' and cmd[0].lower() == 'stream'):
         if(cmd[1].lower() == '0'):
           abort = 1
         else:
@@ -1807,17 +1808,23 @@ def extern_trigger(_command):
       prnt('extern_trigger cmds ' + str(cmds))
       try:
         if(len(cmds)>2):#flash
-          flsCmd = int(cmds[2])
+          if(len(cmds[2])>0):
+            flsCmd = int(cmds[2])
         if(len(cmds)>3):#iso
-          cam.iso = int(cmds[3])
+          if(len(cmds[3])>0):
+            cam.iso = int(cmds[3])
         if(len(cmds)>4):#mode
-          if cmd[4] in camStt.ExpMod:
+          if cmds[4] in camStt.ExpMod:
             cam.exposure_mode = cmd[4]
         if(len(cmds)>5):#effect
-          if cmd[5] in camStt.ImgEff:
+          if cmds[5] in camStt.ImgEff:
             cam.image_effect = cmd[5]
         if(len(cmds)>6):#drc
-          drc = cmds[6]
+          if(len(cmds[6])>0):
+            drc = cmds[6]
+        if(len(cmds)>7):#drc
+          if(len(cmds[7])>0):
+            cam.exposure_compensation = int(cmds[7])
         cam.drc_strength=drc
         ll = measureLight(cam)
         l = (LL+ll)/2
@@ -1830,10 +1837,10 @@ def extern_trigger(_command):
           cam.exposure_mode = 'off'
           cam.iso = 800
           #cam.exposure_compensation = 25/(2**l)
-          time.sleep(5.0)
-        else:
-          #cam.exposure_compensation = 0
-          time.sleep(3.0)
+          time.sleep(2.0)
+        elif(l > 140):
+          cam.exposure_compensation = cam.exposure_compensation-6
+        time.sleep(3.0)
         LL = l
         fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
         cam.close()

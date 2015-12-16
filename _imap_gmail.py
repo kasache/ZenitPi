@@ -163,8 +163,10 @@ class ZenitMail():
   def getSubscribers(self):
     return self.checkInbox('UNSEEN')
   def deleteAllSeen(self):
-    return self.checkInbox(_rule='SEEN', _del=True)  
-  def checkInbox(self, _rule='UNSEEN', _del=False):
+    return self.checkInbox(_rule='SEEN', _del=True)
+  def deleteAllSent(self):
+    return self.checkInbox(_folder='sent', _rule='All', _del=True)
+  def checkInbox(self,_folder='inbox', _rule='UNSEEN', _del=False):
     L=[]
     L=self.rdLst()
     callobs = 0
@@ -183,65 +185,69 @@ class ZenitMail():
     mail.login(self.frma, self.pswd)
     self.log('list...')
     mail.list()
-    # 
-    mail.select("inbox")
-    typ, searchData = mail.search(None, _rule)
-    self.log('typ='+str(typ))
-    self.log('searchData='+str(searchData))
-    for num in searchData[0].split():
-      result, data = mail.fetch(num,'(RFC822)')
-      self.log('result='+str(result))
-      if(_del):
-        mail.store(num, '+FLAGS', '\\Deleted')
-        mail.expunge()
-        continue
-      if(data == None):
-        break
-      raw_email = data[0][1]
-      #self.log('raw='+str(raw_email))
-      email_message = email.message_from_string(raw_email)
-      frmN,frmA = email.utils.parseaddr(email_message['From'])
-      sbj = email_message['Subject']
-      self.log(frmA + ' ' + sbj)
-      frmA = frmA.rstrip()
-      cmd = sbj.split()
-      if(frmA in self.auth):
-        if(sbj.lower() == 'subscribe'):
-          self.uniqAppend(L,frmA)
-          #
-        elif(sbj.lower() == 'unsubscribe'):
-          if((frmA in L)):
-            self.log('< ' + frmA + str(L))
-            L.remove(frmA)
+    #
+    EXS,res = mail.select(_folder)
+    self.log('select ' + str(res))
+    if (EXS == 'OK'):
+      typ, searchData = mail.search(None, _rule)
+      self.log('typ='+str(typ))
+      self.log('searchData='+str(searchData))
+      for num in searchData[0].split():
+        result, data = mail.fetch(num,'(RFC822)')
+        self.log('result='+str(result))
+        if(_del):
+          mail.store(num, '+FLAGS', '\\Deleted')
+          mail.expunge()
+          continue
+        if(data == None):
+          break
+        raw_email = data[0][1]
+        #self.log('raw='+str(raw_email))
+        email_message = email.message_from_string(raw_email)
+        frmN,frmA = email.utils.parseaddr(email_message['From'])
+        sbj = email_message['Subject']
+        self.log(frmA + ' ' + sbj)
+        frmA = frmA.rstrip()
+        cmd = sbj.split()
+        if(frmA in self.auth):
+          if(sbj.lower() == 'subscribe'):
+            self.uniqAppend(L,frmA)
             #
-          #
-        elif(len(cmd)>0 and cmd[0].lower() == 'trigger'):
-          self.log('mail cmd ' + str(cmd))
-          rcvs.append(frmA)
-          cmds.append(cmd)
-          callobs = 1
-          #
-        elif(len(cmd)>0 and cmd[0].lower() == 'help'):
-          self.log('mail cmd ' + str(cmd))
-          rcvs.append(frmA)
-          cmds.append(cmd)
-          callobs = 1
-          #
-        elif(len(cmd)>1 and cmd[0].lower() == 'stream'):
-          self.log('mail cmd ' + str(cmd))
-          rcvs.append(frmA)
-          cmds.append(cmd)
-          callobs = 1
-          #
+          elif(sbj.lower() == 'unsubscribe'):
+            if((frmA in L)):
+              self.log('< ' + frmA + str(L))
+              L.remove(frmA)
+              #
+            #
+          elif(len(cmd)>0 and cmd[0].lower() == 'trigger'):
+            self.log('mail cmd ' + str(cmd))
+            rcvs.append(frmA)
+            cmds.append(cmd)
+            callobs = 1
+            #
+          elif(len(cmd)>0 and cmd[0].lower() == 'help'):
+            self.log('mail cmd ' + str(cmd))
+            rcvs.append(frmA)
+            cmds.append(cmd)
+            callobs = 1
+            #
+          elif(len(cmd)>1 and cmd[0].lower() == 'stream'):
+            self.log('mail cmd ' + str(cmd))
+            rcvs.append(frmA)
+            cmds.append(cmd)
+            callobs = 1
+            #
+          else:
+            #invalid command
+            iRcvs.append(frmA)
+            sendInstantReply = True
+            instantReply = 'invalid cmd'
         else:
-          #invalid command
-          iRcvs.append(frmA)
-          sendInstantReply = True
-          instantReply = 'invalid cmd'
-      else:
-        self.log('invalid sender ' + frmA)
-      #
-    mail.close()
+          self.log('invalid sender ' + frmA)
+        #
+      self.log('close imap')
+      mail.close()
+    self.log('logout')
     mail.logout()
     self.log('list before write:')
     for r in L:
@@ -278,6 +284,7 @@ class ZenitMail():
       cllbk(txt)
 
 #zm = ZenitMail()
+#zm.add_log(prnt)
 #zm.checkInbox()
 #zm.getSubscribers()
 #zm.deleteAllSeen()

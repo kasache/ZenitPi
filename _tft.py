@@ -1832,16 +1832,23 @@ def extern_trigger(_command):
           if(l == 0):
             l = 1
           prnt('extern_trigger nacht')
-          cam.framerate = Fraction(1, 6*l)
-          cam.shutter_speed = 6000000/l
-          cam.exposure_mode = 'off'
-          cam.iso = 800
-          #cam.exposure_compensation = 25/(2**l)
+          cam.framerate = Fraction(1, 4*l)
           time.sleep(2.0)
+          cam.shutter_speed = 8000000/l
+          #cam.shutter_speed = cam.exposure_speed
+          cam.exposure_mode = 'off'
+          g = cam.awb_gains
+          cam.awb_mode = 'off'
+          cam.awb_gains = g
+          cam.iso = 600
+          #
+        elif(l > 120):
+          cam.exposure_compensation = -6
         elif(l > 140):
-          cam.exposure_compensation = cam.exposure_compensation-6
+          cam.exposure_compensation = -12
         time.sleep(3.0)
         LL = l
+        prnt('extern_trigger ' + str(cam.framerate) + ' ' + str(cam.shutter_speed))
         fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
         cam.close()
       except Exception as e:

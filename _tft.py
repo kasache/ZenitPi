@@ -1023,14 +1023,14 @@ def checkMailPeriodic():
   #  st = nMod+ST_FOTO_1
   while(st >= ST_IDLE):
     time.sleep(MCYC)
-    prnt('checkMailPeriodic ' + str(status))
+    #prnt('checkMailPeriodic ' + str(status))
     try:
       if(st == ST_IDLE or st == ST_VID_STREAM or st == ST_TMLPS_CRON):
         L1.ylw()
         if(hasInet()):
           #prnt('getSubscribers')
           zm.getSubscribers()
-          prnt('copyOutstandingAsync')
+          #prnt('copyOutstandingAsync')
           copyOutstandingAsync()
         else:
           restartNetwork()
@@ -1324,6 +1324,7 @@ def measureLight(camera):
   orig_iso = camera.iso
   camera.resolution = (400, 300)
   camera.iso = 400
+  time.sleep(1.0)
   with picamera.array.PiRGBArray(camera) as stream:
     #prnt("measureLight")
     camera.exposure_mode = 'auto'
@@ -1752,7 +1753,8 @@ def swapWiFi():
   #
 
 def restartNetwork():
-    asyncSysCall('/etc/init.d/networking restart')
+  prnt('restartNetwork')
+  asyncSysCall('/etc/init.d/networking restart')
   #
 
 def checkTime():
@@ -1828,26 +1830,31 @@ def extern_trigger(_command):
         cam.drc_strength=drc
         ll = measureLight(cam)
         l = (LL+ll)/2
-        if(l < 20):
+        #up = False
+        limit = 15
+        #if(l>LL):
+        #  up = True
+        #  limit = 15
+        prnt('extern_trigger licht level ' + str(l))
+        if(l < limit):
           if(l == 0):
             l = 1
-          prnt('extern_trigger nacht')
-          cam.framerate = Fraction(1, 4*l)
-          time.sleep(2.0)
-          cam.shutter_speed = 8000000/l
-          #cam.shutter_speed = cam.exposure_speed
+          prnt('extern_trigger nacht ')
           cam.exposure_mode = 'off'
-          g = cam.awb_gains
-          cam.awb_mode = 'off'
-          cam.awb_gains = g
+          cam.framerate = Fraction(1, 2*l)
+          cam.shutter_speed = 3500000/l
+          #if(up):
+          #  cam.framerate = Fraction(1, 8*l)
+          #  cam.shutter_speed = 1250000/l
           cam.iso = 600
+          time.sleep(2.0)
           #
         elif(l > 120):
           cam.exposure_compensation = -6
         elif(l > 140):
           cam.exposure_compensation = -12
-        time.sleep(3.0)
         LL = l
+        time.sleep(2.0)
         prnt('extern_trigger ' + str(cam.framerate) + ' ' + str(cam.shutter_speed))
         fn = manuTrg(cam, cmds[1], fls=flsCmd, mode=ST_FOTO_1)
         cam.close()

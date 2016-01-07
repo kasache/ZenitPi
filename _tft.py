@@ -211,6 +211,12 @@ def rdFtpAuth():
     ftpPWD = l[2].rstrip()
     ftpRDIR = l[3].rstrip()
 
+def rdFileList(lst):
+  l = []
+  with open(lst, 'r') as f:
+    l = list(f)
+    f.close()
+  return l
 
 def checkDiskSpace():
   try:
@@ -1054,10 +1060,26 @@ def copyOutstandingFtp():
   try:
     while(len(lstFilesToSend)>0):
       fn = lstFilesToSend[0]
-      if(sendFileFtp(fn, imgDir , ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
+      if(sendFileFtp(fn, imgDir, ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
         sysCall('rm -f '+ imgDir + fn, log=False)
         lstFilesToSend.remove(fn)
       else:
+        prnt('sendFileFtp failed for ' + fn)
+        break;
+    lst = 'cp_lst.txt'
+    sysCall('rm -f ' + lst)
+    sysCall('ls ' + imgDir + 'pic*.jpg > ' + lst)
+    flst = rdFileList(lst)
+    while(len(flst)>0):
+      oofn = flst[0] 
+      ofn = oofn.rstrip()
+      splt = ofn.split('/')
+      fn = splt[len(splt)-1]
+      if(sendFileFtp(fn, imgDir, ftpRDIR, ftpSRV, ftpUSR, ftpPWD)):
+        sysCall('rm -f '+ imgDir + fn, log=False)
+        flst.remove(oofn)
+      else:
+        prnt('sendFileFtp failed for ' + fn)
         break;
   except Exception as ex:
     prnt('copyOutstandingFtp ' + str(ex))
